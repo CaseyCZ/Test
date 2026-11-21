@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "traceIntervalSeconds": 5,
+  "forceHdmiOverlay": true,
+  "keepCpuAwake": true,
+  "decoderMode": "no_gpu"
+}
