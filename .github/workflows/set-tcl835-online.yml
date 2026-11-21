@@ -66,21 +66,16 @@ jobs:
               raise SystemExit('Unrecognized interval')
           overlay, cpu, decoder = profiles[profile]
           p = pathlib.Path('config/tcl835.json')
-          current = json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}
           config = {
               'schema': 1,
               'traceIntervalSeconds': seconds,
               'forceHdmiOverlay': overlay,
               'keepCpuAwake': cpu,
               'decoderMode': decoder,
-              # Never silently enable or disable private log uploads.
-              'logUploadEnabled': current.get('logUploadEnabled', False),
-              'logUploadEndpoint': current.get('logUploadEndpoint', ''),
           }
           p.parent.mkdir(parents=True, exist_ok=True)
           p.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
-          print('New diagnostic profile:', profile, 'interval:', seconds,
-                'upload enabled:', bool(config['logUploadEnabled']))
+          print('New diagnostic profile:', profile, 'interval:', seconds)
           PY
 
       - name: Commit selected online test
