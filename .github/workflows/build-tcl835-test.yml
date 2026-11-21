@@ -10,6 +10,7 @@ on:
       - "tools/TclDiagnostika.kt"
       - "tools/TclOnlineNastaveni.kt"
       - "tools/TclOdesilacLogu.kt"
+      - "collector/**"
   pull_request:
     branches: [Master]
     paths:
@@ -18,6 +19,7 @@ on:
       - "tools/TclDiagnostika.kt"
       - "tools/TclOnlineNastaveni.kt"
       - "tools/TclOdesilacLogu.kt"
+      - "collector/**"
 
 permissions:
   contents: read
@@ -68,6 +70,11 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+      - name: Validate private collector and authentication
+        run: |
+          node --check kit/collector/server.cjs
+          node --test kit/collector/test-server.cjs
 
       - name: Apply TCL diagnostic patch
         run: |
