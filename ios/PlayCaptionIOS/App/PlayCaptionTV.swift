@@ -175,7 +175,7 @@ final class PlayCaptionTV: ObservableObject {
         let clean = subtitle.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\t", with: " ")
             .replacingOccurrences(of: "\n", with: "\\n")
-        let layout = preview ? "\t0.5\t0.91\t0.8\t1\t1" : ""
+        let layout = preview ? "0.5\t0.91\t0.8\t1\t1" : ""
         let payload = Data("PCT1\t\(sequence)\t\(max(0, duration))\t\(clean)\t\(layout)".utf8)
         sendDatagram(payload, to: target, reportStatus: true)
         guard duration > 0 else { return }
