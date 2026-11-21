@@ -87,6 +87,12 @@ actor CaptionPipeline {
     private var lastOptionsRead = Date.distantPast
     private var lastOptionsSettings = ""
 
+    func resetOptions() {
+        lastOptions = []
+        lastOptionsRead = .distantPast
+        lastOptionsSettings = ""
+    }
+
     /// The area uses top-left normalized screen coordinates, unlike Vision.
     /// Returns nil when unchanged; [] when choices disappeared and TV should clear.
     func recognizeOptions(_ buffer: CVPixelBuffer,
