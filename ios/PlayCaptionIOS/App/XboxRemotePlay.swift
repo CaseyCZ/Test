@@ -107,7 +107,7 @@ final class XboxRemotePlay: NSObject {
             let mid = item["sdpMid"] as? String ?? "0"
             let index = Int32((item["sdpMLineIndex"] as? Int) ??
                 Int(item["sdpMLineIndex"] as? String ?? "0") ?? 0)
-            peer.add(RTCIceCandidate(sdp: text, sdpMLineIndex: index, sdpMid: mid))
+            try await peer.add(RTCIceCandidate(sdp: text, sdpMLineIndex: index, sdpMid: mid))
         }
         info("WebRTC navázáno · čekám na obraz")
         keepalive = Task { [weak self] in
