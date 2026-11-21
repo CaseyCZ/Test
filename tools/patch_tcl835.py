@@ -198,6 +198,44 @@ def main() -> None:
         "            \"\\n\\n=== titulky.log ===\\n\" + konec(\"titulky.log\", 120) +\n",
         "            \"\\n\\n=== TCL C835 HDMI TRACE ===\\n\" + konec(\"tcl835-diagnostic.log\", 120) +\n            \"\\n\\n=== titulky.log ===\\n\" + konec(\"titulky.log\", 120) +\n")
 
+    config_source = pathlib.Path(__file__).with_name("TclOnlineNastaveni.kt")
+    if not config_source.is_file():
+        raise RuntimeError("TclOnlineNastaveni.kt must ship with the patch script")
+    (root/"app/src/main/java/cz/titulky/tv/TclOnlineNastaveni.kt").write_text(
+        config_source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    replace_once(foreground,
+        "\" normalWouldShow=\" + realneVstup + \" gpuTestForcesShow=true\" +\n",
+        "\" normalWouldShow=\" + realneVstup + \" onlineForceOverlay=\" + TclOnlineNastaveni.vynutitPrekryv +\n")
+
+    replace_once(foreground,
+        "            return true\n        }\n        val p = balicek() ?: return true\n",
+        "            return TclOnlineNastaveni.vynutitPrekryv || realneVstup\n        }\n        val p = balicek() ?: return true\n")
+
+    replace_once(remote,
+        "            val tvDiagnostic = ano && aktivni && !Rezim.jeTelefon(this)\n",
+        "            val tvDiagnostic = ano && aktivni && !Rezim.jeTelefon(this) && TclOnlineNastaveni.zamykatCpu\n")
+
+    replace_once(remote,
+        "}, priSnimku = { f -> snimekXbox(f) }, bezGpu = true)",
+        "}, priSnimku = { f -> snimekXbox(f) }, bezGpu = telefon || TclOnlineNastaveni.dekoderBezGpu)")
+
+    replace_once(remote,
+        "        ui.postDelayed(tclHlidac, 1000L)\n",
+        "        TclOnlineNastaveni.obnov(this)\n        ui.postDelayed(tclHlidac, 1000L)\n")
+
+    replace_once(remote,
+        "    private val tclHlidac = object : Runnable {\n",
+        "    private var tclOnlineRevize = 0\n    private var tclPosledniZapisMs = 0L\n    private val tclHlidac = object : Runnable {\n")
+
+    replace_once(remote,
+        "        override fun run() {\n            if (aktivni && !Rezim.jeTelefon(this@RemotePlayService)) {\n",
+        "        override fun run() {\n            TclOnlineNastaveni.obnov(this@RemotePlayService)\n            if (tclOnlineRevize != TclOnlineNastaveni.revize) {\n                tclOnlineRevize = TclOnlineNastaveni.revize\n                if (aktivni) drzWifi(napajeniZapnuto)\n            }\n            val tedLog = android.os.SystemClock.elapsedRealtime()\n            if (aktivni && !Rezim.jeTelefon(this@RemotePlayService) &&\n                tedLog - tclPosledniZapisMs >= TclOnlineNastaveni.intervalLoguSekund * 1000L) {\n                tclPosledniZapisMs = tedLog\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/PrijemService.kt",
+        "            val ted = System.currentTimeMillis()\n",
+        "            val ted = System.currentTimeMillis()\n            TclOnlineNastaveni.obnov(this@PrijemService)\n")
+
     print("TCL Caption GPU TEST ready; independent package: cz.titulky.tv.tcl835gpudiag")
 
 
