@@ -67,6 +67,29 @@ klíčů, žádné stahování ani spouštění vzdáleného kódu. Aplikace **n
 logy ani Xbox přihlašovací údaje**. Pro vyhodnocení stále musíme získat
 diagnostický výpis z TV. Bez znalosti výsledku testu nelze potvrdit opravu HDMI.
 
+## Automatické odesílání technické diagnostiky
+
+Rozšířená testovací APK může **po přepnutí HDMI a při výpadku Remote Play**
+odesílat anonymizovanou časovou osu na **tvůj vlastní soukromý HTTPS server**.
+Záznamy zůstávají dostupné v diagnostice TV i tehdy, když spojení vypadne.
+
+- Odesílá se **pouze** vybraná část `tcl835-diagnostic.log`:
+  změny foreground, stavy služby, ICE, počty snímků, čas bez snímku,
+  chyby překryvu. Neodesílají se texty titulků, snímky obrazovky,
+  Xbox účty, tokeny, původní `xbox.log` ani `titulky.log`.
+- Každá TV si vytvoří vlastní podpisový klíč v Android Keystore.
+  Server přijme jen první zařízení spárované během krátkého
+  kontrolovaného okna a každou další zprávu ověří podpisem.
+- Odesílání je ve veřejném `config/tcl835.json` **vypnuté**, dokud
+  neexistuje ověřená HTTPS adresa a server není připraven.
+  Nelze použít GitHub Pages jako příjemce soukromých logů.
+- Server a přesný postup nasazení:
+  [collector/README.md](collector/README.md).
+- **ChatGPT nemůže automaticky přijímat soubory z internetu přímo do
+  otevřené konverzace.** Po uložení na tvém serveru je potřeba
+  poskytnout přístupný výpis nebo propojený soukromý repozitář.
+  Tím pak můžu log analyzovat bez fotek z TV.
+
 ## Zdroj, licence a autorství
 
 Původní aplikace [AdamRuzick4/PlayCaption-app](https://github.com/AdamRuzick4/PlayCaption-app) © Adam Růžička a přispěvatelé je vydána pod **GNU AGPLv3**. Toto experimentální rozšíření a jeho úpravy jsou také pod GNU AGPLv3. Odpovídající zdrojový kód testovací APK vzniká kombinací konkrétního upstream commitu [633a847](https://github.com/AdamRuzick4/PlayCaption-app/commit/633a847400b6c4bac1e7f034463e7847a53a9590) a zdejšího skriptu [tools/patch_tcl835.py](tools/patch_tcl835.py). Build workflow je součástí tohoto repozitáře. Název ani logo autora se pro označení testovací aplikace nepoužívá.
