@@ -1,4 +1,4 @@
-name: Build TCL C835 Caption TEST APK
+name: Build TCL C835 GPU diagnostic APK
 
 on:
   workflow_dispatch:
@@ -79,12 +79,12 @@ jobs:
           set -euo pipefail
           APK=$(find upstream/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)
           test -s "$APK"
-          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep "package: name='cz.titulky.tv.tcl835test'"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep "package: name='cz.titulky.tv.tcl835gpudiag'"
 
       - name: Upload test APK and source patch
         uses: actions/upload-artifact@v4
         with:
-          name: TCL-C835-Caption-TEST
+          name: TCL-C835-Caption-GPU-TEST
           path: |
             upstream/app/build/outputs/apk/debug/*.apk
             kit/tools/patch_tcl835.py
