@@ -17,7 +17,7 @@ import java.util.Locale
 internal object TclGitHubOdeslani {
     private const val PREFIX = "[TCLDBG pid="
     private val ALLOWED = listOf(
-        "[INPUT]", "[RP ", "[RTC]", "[OVERLAY", "[TV RECEIVE", "[ONLINE CONFIG]"
+        "[INPUT]", "[RP ", "[RTC]", "[OVERLAY", "[TV RECEIVE", "[SELF TEST]", "[ONLINE CONFIG]"
     )
 
     private fun vyberLog(a: Activity): String {
