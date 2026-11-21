@@ -28,6 +28,17 @@ final class CaptionAppModel: ObservableObject {
     private let pipeline = CaptionPipeline()
     private var remotePlay: XboxRemotePlay?
 
+    init() {
+        tv.onPairingData = { [weak self] fields in
+            guard let self else { return }
+            if self.xbox.importPairedXbox(fields) {
+                self.write("Xbox přihlášení převzato z PlayCaption TV.")
+            } else {
+                self.write("Televize spárována; Microsoft účet přihlas zvlášť.")
+            }
+        }
+    }
+
     func write(_ message: String) {
         logLines.append("\(Date().formatted(date: .omitted, time: .standard))  \(message)")
         if logLines.count > 250 { logLines.removeFirst(logLines.count - 250) }
@@ -35,6 +46,10 @@ final class CaptionAppModel: ObservableObject {
 
     func start(_ console: XboxConsole) {
         guard !isRunning else { return }
+        guard tv.isPaired else {
+            status = "Nejdřív spáruj iPhone s televizí."
+            return
+        }
         isRunning = true
         UIApplication.shared.isIdleTimerDisabled = true
         status = "Navazuji Xbox Remote Play…"
@@ -114,7 +129,7 @@ struct ContentView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.red)
-                                .disabled(selection == nil || model.isRunning)
+                                .disabled(selection == nil || model.isRunning || !model.tv.isPaired)
                                 Button("Zastavit") { model.stop() }
                                     .buttonStyle(.bordered)
                                     .disabled(!model.isRunning)
@@ -176,10 +191,28 @@ struct TVSelectionView: View {
                     }
                 }
             }
+            Divider()
+            Text("Nejdřív spáruj s PlayCaption v televizi")
+                .font(.subheadline.bold())
+            Button("1 · Vyžádat párovací kód na TV") { tv.requestPairing() }
+                .buttonStyle(.bordered)
+            HStack {
+                TextField("Čtyřmístný kód z televize", text: $tv.pairingCode)
+                    .keyboardType(.numberPad)
+                Button("2 · Spárovat") { tv.confirmPairing() }
+                    .buttonStyle(.borderedProminent)
+            }
+            Text(tv.pairingStatus)
+                .font(.caption)
+                .foregroundStyle(tv.isPaired ? .green : .secondary)
+            Divider()
             TextField("Zkušební titulek", text: $test)
             Button("Odeslat zkušební titulek") {
-                tv.sendSubtitle(test, duration: 8_000)
+                tv.sendSubtitle(test, duration: 8_000, preview: true)
             }.buttonStyle(.borderedProminent).tint(.red)
+                .disabled(!tv.isPaired)
+            Text("Zkušební titulek se zobrazí i v menu Google TV (režim úpravy polohy).")
+                .font(.caption).foregroundStyle(.secondary)
             Text(tv.message).font(.caption).foregroundStyle(.secondary)
         }
     }
