@@ -236,23 +236,15 @@ def main() -> None:
         "            val ted = System.currentTimeMillis()\n",
         "            val ted = System.currentTimeMillis()\n            TclOnlineNastaveni.obnov(this@PrijemService)\n")
 
-    upload_source = pathlib.Path(__file__).with_name("TclOdesilacLogu.kt")
-    if not upload_source.is_file():
-        raise RuntimeError("TclOdesilacLogu.kt must ship with the patch script")
-    (root/"app/src/main/java/cz/titulky/tv/TclOdesilacLogu.kt").write_text(
-        upload_source.read_text(encoding="utf-8"), encoding="utf-8")
+    github_source = pathlib.Path(__file__).with_name("TclGitHubOdeslani.kt")
+    if not github_source.is_file():
+        raise RuntimeError("TclGitHubOdeslani.kt must ship with the patch script")
+    (root/"app/src/main/java/cz/titulky/tv/TclGitHubOdeslani.kt").write_text(
+        github_source.read_text(encoding="utf-8"), encoding="utf-8")
 
-    replace_once(remote,
-        "            TclOnlineNastaveni.obnov(this@RemotePlayService)\n            if (tclOnlineRevize != TclOnlineNastaveni.revize) {",
-        "            TclOnlineNastaveni.obnov(this@RemotePlayService)\n            TclOdesilacLogu.zkusOdeslat(this@RemotePlayService)\n            if (tclOnlineRevize != TclOnlineNastaveni.revize) {")
-
-    replace_once(root/"app/src/main/java/cz/titulky/tv/PrijemService.kt",
-        "            TclOnlineNastaveni.obnov(this@PrijemService)\n",
-        "            TclOnlineNastaveni.obnov(this@PrijemService)\n            TclOdesilacLogu.zkusOdeslat(this@PrijemService)\n")
-
-    replace_once(root/"app/src/main/java/cz/titulky/tv/XboxLog.kt",
-        "            TclDiagnostika.zapis(ctx, \"[RTC] \" + radek)\n",
-        "            TclDiagnostika.zapis(ctx, \"[RTC] \" + radek)\n            if (radek.startsWith(\"[Xbox] ICE: DISCONNECTED\") ||\n                radek.startsWith(\"[Xbox] ICE: FAILED\") ||\n                radek.startsWith(\"[Xbox] ICE: CLOSED\") ||\n                radek.startsWith(\"[Xbox] konzole ukončila spojení\")) {\n                TclOdesilacLogu.zkusOdeslat(ctx, urgent = true)\n            }\n")
+    replace_once(root/"app/src/main/java/cz/titulky/tv/Zaznam.kt",
+        "        tlacitka += tlacitko(t(\"diagKonec\")) { posuv.post { posuv.fullScroll(View.FOCUS_DOWN) } }\n",
+        "        tlacitka += tlacitko(t(\"diagKonec\")) { posuv.post { posuv.fullScroll(View.FOCUS_DOWN) } }\n        tlacitka += tlacitko(\"Odeslat log na GitHub\") { TclGitHubOdeslani.otevri(a) }\n")
 
     print("TCL Caption GPU TEST ready; independent package: cz.titulky.tv.tcl835gpudiag")
 
