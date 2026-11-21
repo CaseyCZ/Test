@@ -3,5 +3,7 @@
   "traceIntervalSeconds": 5,
   "forceHdmiOverlay": true,
   "keepCpuAwake": true,
-  "decoderMode": "no_gpu"
+  "decoderMode": "no_gpu",
+  "logUploadEnabled": false,
+  "logUploadEndpoint": ""
 }
