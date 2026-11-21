@@ -46,10 +46,6 @@ final class CaptionAppModel: ObservableObject {
 
     func start(_ console: XboxConsole) {
         guard !isRunning else { return }
-        guard tv.isPaired else {
-            status = "Nejdřív spáruj iPhone s televizí."
-            return
-        }
         isRunning = true
         UIApplication.shared.isIdleTimerDisabled = true
         status = "Navazuji Xbox Remote Play…"
@@ -129,7 +125,7 @@ struct ContentView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.red)
-                                .disabled(selection == nil || model.isRunning || !model.tv.isPaired)
+                                .disabled(selection == nil || model.isRunning)
                                 Button("Zastavit") { model.stop() }
                                     .buttonStyle(.bordered)
                                     .disabled(!model.isRunning)
@@ -192,7 +188,7 @@ struct TVSelectionView: View {
                 }
             }
             Divider()
-            Text("Nejdřív spáruj s PlayCaption v televizi")
+            Text("Volitelné párování / převzetí Xbox účtu z TV")
                 .font(.subheadline.bold())
             Button("1 · Vyžádat párovací kód na TV") { tv.requestPairing() }
                 .buttonStyle(.bordered)
@@ -210,7 +206,6 @@ struct TVSelectionView: View {
             Button("Odeslat zkušební titulek") {
                 tv.sendSubtitle(test, duration: 8_000, preview: true)
             }.buttonStyle(.borderedProminent).tint(.red)
-                .disabled(!tv.isPaired)
             Text("Zkušební titulek se zobrazí i v menu Google TV (režim úpravy polohy).")
                 .font(.caption).foregroundStyle(.secondary)
             Text(tv.message).font(.caption).foregroundStyle(.secondary)
