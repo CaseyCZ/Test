@@ -56,12 +56,12 @@ def main() -> None:
     replace_once(gradle,
         '    buildTypes {\n        release { isMinifyEnabled = false }\n    }',
         '    buildTypes {\n        getByName("debug") {\n'
-        '            applicationIdSuffix = ".tcl835test"\n'
-        '            versionNameSuffix = "-tcl835-test"\n'
+        '            applicationIdSuffix = ".tcl835gpudiag"\n'
+        '            versionNameSuffix = "-tcl835-gpu-diagnostic"\n'
         '        }\n        release { isMinifyEnabled = false }\n    }')
     replace_once(root/"app/src/main/res/values/strings.xml",
         '<string name="app_name">PlayCaption</string>',
-        '<string name="app_name">TCL Caption TEST</string>')
+        '<string name="app_name">TCL Caption GPU TEST</string>')
 
     draw = root/"app/src/main/res/drawable-nodpi"
     draw.mkdir(parents=True, exist_ok=True)
@@ -114,7 +114,32 @@ def main() -> None:
         '    override fun onDestroy() {\n'
         '        zapis("[TCL C835 TEST] RemotePlayService onDestroy")\n'
         '        zanikla = true\n')
-    print("TCL Caption TEST ready; independent package: cz.titulky.tv.tcl835test")
+    # v2 experiment: Android phone path uses a decoder without EGL GPU textures.
+    # The TCL's first Xbox frame was TextureBufferImpl; see if the texture
+    # path stalls when Google TV switches the foreground to the HDMI input.
+    replace_once(remote,
+        '}, priSnimku = { f -> snimekXbox(f) }, bezGpu = telefon)',
+        '}, priSnimku = { f -> snimekXbox(f) }, bezGpu = true)')
+
+    xbox = root/"app/src/main/java/cz/titulky/tv/XboxSpojeni.kt"
+    replace_once(xbox,
+        '            // 3) WebRTC\n            priStavu("Navazuji spojení s Xboxem…")',
+        '            // 3) WebRTC\n'
+        '            log("[TCL C835 GPU TEST] dekoder bez EGL textur=" + bezGpu)\n'
+        '            priStavu("Navazuji spojení s Xboxem…")')
+    replace_once(xbox,
+        '        @Volatile private var posledniSnimek = 0L\n',
+        '        @Volatile private var posledniSnimek = 0L\n'
+        '        @Volatile private var posledniStatistikaSnimku = 0L\n')
+    replace_once(xbox,
+        '            posledniSnimek = System.currentTimeMillis()\n            sirka = f.rotatedWidth; vyska = f.rotatedHeight',
+        '            posledniSnimek = System.currentTimeMillis()\n'
+        '            if (posledniSnimek - posledniStatistikaSnimku > 10000L) {\n'
+        '                posledniStatistikaSnimku = posledniSnimek\n'
+        '                log("[TCL C835 GPU TEST] snimku celkem=" + snimku + ", typ=" + f.buffer.javaClass.simpleName)\n'
+        '            }\n'
+        '            sirka = f.rotatedWidth; vyska = f.rotatedHeight')
+    print("TCL Caption GPU TEST ready; independent package: cz.titulky.tv.tcl835gpudiag")
 
 
 if __name__ == "__main__":
