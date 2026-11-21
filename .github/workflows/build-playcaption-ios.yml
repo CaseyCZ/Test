@@ -1,0 +1,62 @@
+name: PlayCaption iOS · unsigned IPA
+
+on:
+  push:
+    branches:
+      - feature/playcaption-ios
+    paths:
+      - "ios/PlayCaptionIOS/**"
+      - ".github/workflows/build-playcaption-ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode and project generator
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          cd ios/PlayCaptionIOS
+          xcodegen generate
+      - name: Build real iPhone binary (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/PlayCaptionIOS/PlayCaptionIOS.xcodeproj \
+            -scheme PlayCaptionIOS -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$PWD/.build/DerivedData" \
+            -clonedSourcePackagesDirPath "$PWD/.build/SourcePackages" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee "$PWD/.build-xcode.log"
+      - name: Package IPA for LiveContainer
+        run: |
+          set -eu
+          APP="$PWD/.build/DerivedData/Build/Products/Release-iphoneos/PlayCaptionIOS.app"
+          test -f "$APP/PlayCaptionIOS"
+          file "$APP/PlayCaptionIOS"
+          mkdir -p "$PWD/.build/ipa/Payload"
+          cp -R "$APP" "$PWD/.build/ipa/Payload/"
+          cd "$PWD/.build/ipa"
+          zip -qry "$GITHUB_WORKSPACE/PlayCaptionIOS-unsigned.ipa" Payload
+          unzip -t "$GITHUB_WORKSPACE/PlayCaptionIOS-unsigned.ipa" >/dev/null
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayCaptionIOS-unsigned
+          path: PlayCaptionIOS-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayCaptionIOS-build-log
+          path: .build-xcode.log
+          if-no-files-found: ignore
+          retention-days: 7
