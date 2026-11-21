@@ -246,6 +246,22 @@ def main() -> None:
         "        tlacitka += tlacitko(t(\"diagKonec\")) { posuv.post { posuv.fullScroll(View.FOCUS_DOWN) } }\n",
         "        tlacitka += tlacitko(t(\"diagKonec\")) { posuv.post { posuv.fullScroll(View.FOCUS_DOWN) } }\n        tlacitka += tlacitko(\"Odeslat log na GitHub\") { TclGitHubOdeslani.otevri(a) }\n")
 
+    replace_once(root/"app/src/main/java/cz/titulky/tv/MainActivity.kt",
+        "    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n",
+        "    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n        TclDiagnostika.zapis(this, \"[UI CREATE] restored=\" + (savedInstanceState != null))\n        TclDiagnostika.historieUkonceni(this)\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/MainActivity.kt",
+        "    override fun onResume() {\n        super.onResume()\n",
+        "    override fun onResume() {\n        super.onResume()\n        TclDiagnostika.zapis(this, \"[UI RESUME] activeRemotePlay=\" +\n            RemotePlayService.aktivni + \" \" + TclDiagnostika.system(this))\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/MainActivity.kt",
+        "    override fun onPause() {\n        ui.removeCallbacks(obnova)\n",
+        "    override fun onPause() {\n        TclDiagnostika.zapis(this, \"[UI PAUSE] activeRemotePlay=\" +\n            RemotePlayService.aktivni)\n        ui.removeCallbacks(obnova)\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/MainActivity.kt",
+        "    override fun onDestroy() {\n        zastavServer()\n",
+        "    override fun onStop() {\n        TclDiagnostika.zapis(this, \"[UI STOP] activeRemotePlay=\" +\n            RemotePlayService.aktivni)\n        super.onStop()\n    }\n\n    override fun onWindowFocusChanged(hasFocus: Boolean) {\n        super.onWindowFocusChanged(hasFocus)\n        TclDiagnostika.zapis(this, \"[UI FOCUS] focused=\" + hasFocus)\n    }\n\n    override fun onDestroy() {\n        TclDiagnostika.zapis(this, \"[UI DESTROY] activeRemotePlay=\" +\n            RemotePlayService.aktivni)\n        zastavServer()\n")
+
     print("TCL Caption GPU TEST ready; independent package: cz.titulky.tv.tcl835gpudiag")
 
 
