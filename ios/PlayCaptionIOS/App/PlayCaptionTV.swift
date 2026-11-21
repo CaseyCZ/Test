@@ -175,7 +175,14 @@ final class PlayCaptionTV: ObservableObject {
         let clean = subtitle.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\t", with: " ")
             .replacingOccurrences(of: "\n", with: "\\n")
-        let layout = preview ? "\t0.5\t0.91\t0.8\t1\t1" : ""
+        // Same 5 layout fields as Android: center X, bottom Y, width,
+        // font size, and 1 while previewing the position.
+        let prefs = UserDefaults.standard
+        let x = (prefs.object(forKey: "outputX") as? Double) ?? 0.5
+        let y = (prefs.object(forKey: "outputBottom") as? Double) ?? 0.93
+        let width = (prefs.object(forKey: "outputWidth") as? Double) ?? 0.62
+        let font = (prefs.object(forKey: "outputFont") as? Double) ?? 1.0
+        let layout = "\t\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
         let payload = Data("PCT1\t\(sequence)\t\(max(0, duration))\t\(clean)\t\(layout)".utf8)
         sendDatagram(payload, to: target, reportStatus: true)
         guard duration > 0 else { return }
@@ -187,6 +194,18 @@ final class PlayCaptionTV: ObservableObject {
                 self?.sendDatagram(payload, to: target, reportStatus: false)
             }
         }
+    }
+
+    /// Blue dashed OCR region preview, supported by official Android TV receiver.
+    /// Coordinates are left, top, right, bottom in a top-left normalized frame.
+    func showOCRRegion(_ area: CGRect, visible: Bool) {
+        let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else {
+            message = "Nejprve vyber televizi."
+            return
+        }
+        let packet = "PCO1\t\(visible ? 1 : 0)\t\(area.minX)\t\(area.minY)\t\(area.maxX)\t\(area.maxY)"
+        sendDatagram(Data(packet.utf8), to: target, reportStatus: false)
     }
 
     private func sendDatagram(_ payload: Data, to target: String, reportStatus: Bool) {
