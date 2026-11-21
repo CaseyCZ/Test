@@ -40,6 +40,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: cz.caseycz.playcaption.ios
         GENERATE_INFOPLIST_FILE: "NO"
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: "YES"
 schemes:
   PlayCaptionIOS:
