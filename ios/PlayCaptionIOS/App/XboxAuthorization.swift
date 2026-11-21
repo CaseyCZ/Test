@@ -8,7 +8,7 @@ struct XboxConsole: Identifiable, Hashable {
     let powerState: String
 }
 
-struct MicrosoftDeviceCode {
+struct MicrosoftDeviceCode: Codable {
     let userCode: String
     let verificationURL: String
     let deviceCode: String
@@ -32,10 +32,10 @@ enum XboxError: LocalizedError {
 
 /// Tokeny zůstávají pouze na zařízení, nikdy se neposílají do GitHub logu.
 private enum SecureTokenStore {
-    private static let account = "microsoft_refresh"
+    private static let tokenAccount = "microsoft_refresh"
     private static let service = "cz.caseycz.playcaption.ios"
 
-    static func get() -> String? {
+    static func get(account: String = tokenAccount) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -49,7 +49,7 @@ private enum SecureTokenStore {
         return String(data: d, encoding: .utf8)
     }
 
-    static func put(_ token: String) {
+    @discardableResult static func put(_ token: String, account: String = tokenAccount) -> Bool {
         let search: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -59,16 +59,39 @@ private enum SecureTokenStore {
         var attributes = search
         attributes[kSecValueData as String] = Data(token.utf8)
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(attributes as CFDictionary, nil)
+        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 
-    static func clear() {
+    static func clear(account: String = tokenAccount) {
         let search: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
         SecItemDelete(search as CFDictionary)
+    }
+}
+
+/// Only the device-code challenge is persisted. It is a temporary, sensitive
+/// OAuth credential and must not be saved to UserDefaults or printed in logs.
+private enum PendingLoginStore {
+    private static let account = "microsoft_device_code"
+    static func load() -> MicrosoftDeviceCode? {
+        guard let raw = SecureTokenStore.get(account: account),
+              let data = raw.data(using: .utf8),
+              let code = try? JSONDecoder().decode(MicrosoftDeviceCode.self, from: data)
+        else { return nil }
+        return code
+    }
+
+    static func save(_ code: MicrosoftDeviceCode) -> Bool {
+        guard let data = try? JSONEncoder().encode(code),
+              let string = String(data: data, encoding: .utf8) else { return false }
+        return SecureTokenStore.put(string, account: account)
+    }
+
+    static func clear() {
+        SecureTokenStore.clear(account: account)
     }
 }
 
@@ -80,12 +103,127 @@ final class XboxAuthorization: ObservableObject {
     private let scope = "xboxlive.signin openid profile offline_access"
     @Published private(set) var signedIn = SecureTokenStore.get() != nil
     @Published private(set) var status = "Nepřihlášeno"
-    @Published private(set) var currentCode: MicrosoftDeviceCode?
+    @Published private(set) var currentCode: MicrosoftDeviceCode? = PendingLoginStore.load()
     @Published private(set) var consoles: [XboxConsole] = []
 
     private var cachedAccess: (token: String, expires: Date)?
     private var cachedStreaming: XboxStreamingAccess?
-    private var cancelled = false
+    private var loginForeground = true
+    private var pollingTask: Task<Void, Never>?
+    private var pollGeneration = 0
+
+    init() {
+        if signedIn {
+            status = "Xbox účet uložen. Načti svoje konzole."
+        } else if currentCode != nil {
+            status = "Čeká se na potvrzení Microsoftu. Přihlášení lze dokončit."
+        }
+    }
+
+    /// On iOS, leaving the app can suspend URLSession. Preserve the device code
+    /// and restart polling on foreground instead of discarding the challenge.
+    func setApplicationActive(_ active: Bool) {
+        loginForeground = active
+        if active { resumeLoginIfNeeded() }
+        else { pausePolling() }
+    }
+
+    private func pausePolling() {
+        pollGeneration += 1
+        pollingTask?.cancel()
+        pollingTask = nil
+        if currentCode != nil && !signedIn {
+            status = "Čekám na návrat z přihlášení Microsoftu…"
+        }
+    }
+
+    private func clearPendingLogin() {
+        pausePolling()
+        currentCode = nil
+        PendingLoginStore.clear()
+    }
+
+    func resumeLoginIfNeeded() {
+        guard !signedIn, let code = currentCode else { return }
+        if Date() >= code.expiry {
+            clearPendingLogin()
+            status = "Přihlašovací kód vypršel. Vyžádej nový."
+            return
+        }
+        guard loginForeground, pollingTask == nil else { return }
+        pollGeneration += 1
+        let generation = pollGeneration
+        status = "Čekám na potvrzení Microsoftu…"
+        pollingTask = Task { await pollForApproval(code, generation: generation) }
+    }
+
+    private func pollForApproval(_ code: MicrosoftDeviceCode, generation: Int) async {
+        defer { if pollGeneration == generation { pollingTask = nil } }
+        var interval = max(5, code.interval)
+
+        while generation == pollGeneration && !Task.isCancelled && loginForeground && Date() < code.expiry {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
+            } catch { return }
+            guard generation == pollGeneration && !Task.isCancelled && loginForeground else { return }
+
+            let response: [String: Any]
+            do {
+                response = try await tokenResponse([
+                    "client_id": clientID,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    "device_code": code.deviceCode
+                ])
+            } catch {
+                guard generation == pollGeneration && !Task.isCancelled && loginForeground else { return }
+                // A foreground/background transition or interrupted Wi-Fi is
+                // transient. Keep the pending code and try again.
+                status = "Spojení s Microsoftem se přerušilo. Opakuji ověření…"
+                interval = min(max(5, interval * 2), 30)
+                continue
+            }
+            guard generation == pollGeneration && !Task.isCancelled && loginForeground else { return }
+
+            if let access = response["access_token"] as? String, !access.isEmpty {
+                saveTokens(response)
+                cachedAccess = (access, Date().addingTimeInterval(
+                    TimeInterval(response["expires_in"] as? Int ?? 3600) - 60))
+                signedIn = true
+                clearPendingLogin()
+                status = "Přihlášeno. Načítám Xbox konzole…"
+                await refreshConsoles()
+                return
+            }
+
+            switch response["error"] as? String ?? "" {
+            case "authorization_pending":
+                status = "Čekám na dokončení přihlášení v Microsoftu…"
+            case "slow_down":
+                interval = min(interval + 5, 60)
+                status = "Microsoft požádal o pomalejší ověřování…"
+            case "server_error", "temporarily_unavailable":
+                interval = min(max(5, interval * 2), 30)
+                status = "Microsoft je dočasně nedostupný. Zkouším znovu…"
+            case "authorization_declined", "access_denied":
+                clearPendingLogin()
+                status = "Přihlášení bylo odmítnuto. Můžeš začít znovu."
+                return
+            case "expired_token":
+                clearPendingLogin()
+                status = "Přihlašovací kód vypršel. Vyžádej nový."
+                return
+            default:
+                clearPendingLogin()
+                status = "Microsoft přihlášení odmítl: \(response["error"] as? String ?? "neznámá chyba")"
+                return
+            }
+        }
+        guard generation == pollGeneration else { return }
+        if Date() >= code.expiry {
+            clearPendingLogin()
+            status = "Přihlašovací kód vypršel. Vyžádej nový."
+        }
+    }
 
     /// Accepts the existing Android PlayCaption PCS1 DATA format after a user-entered
     /// four-digit TV code. Never log or display these fields: the LAN protocol is
@@ -99,10 +237,9 @@ final class XboxAuthorization: ObservableObject {
         else { return false }
 
         SecureTokenStore.put(refresh)
-        cancelled = false
+        clearPendingLogin()
         cachedAccess = nil
         cachedStreaming = nil
-        currentCode = nil
         signedIn = true
         status = "Xbox účet převzat z televize. Ověřuji konzole…"
         Task { await refreshConsoles() }
@@ -110,11 +247,10 @@ final class XboxAuthorization: ObservableObject {
     }
 
     func signOut() {
-        cancelled = true
+        clearPendingLogin()
         SecureTokenStore.clear()
         cachedAccess = nil
         cachedStreaming = nil
-        currentCode = nil
         consoles = []
         signedIn = false
         status = "Odhlášeno"
@@ -158,7 +294,15 @@ final class XboxAuthorization: ObservableObject {
     }
 
     func beginLogin() async {
-        cancelled = false
+        if signedIn {
+            status = "Už jsi přihlášený. Načti konzole."
+            return
+        }
+        if let code = currentCode, Date() < code.expiry {
+            resumeLoginIfNeeded()
+            return
+        }
+        clearPendingLogin()
         status = "Získávám přihlašovací kód…"
         do {
             let response = try await request(
@@ -174,37 +318,14 @@ final class XboxAuthorization: ObservableObject {
                 deviceCode: deviceCode,
                 interval: max(5, response["interval"] as? Int ?? 5),
                 expiry: Date().addingTimeInterval(TimeInterval(response["expires_in"] as? Int ?? 900)))
+            let persisted = PendingLoginStore.save(code)
             currentCode = code
-            status = "Zadej kód na stránce Microsoftu"
-            var interval = code.interval
-            while !cancelled && Date() < code.expiry {
-                try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
-                if cancelled { return }
-                let result = try await tokenResponse([
-                    "client_id": clientID,
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                    "device_code": code.deviceCode
-                ])
-                if let access = result["access_token"] as? String {
-                    saveTokens(result)
-                    cachedAccess = (access, Date().addingTimeInterval(TimeInterval(result["expires_in"] as? Int ?? 3600) - 60))
-                    signedIn = true
-                    currentCode = nil
-                    status = "Přihlášeno. Načítám konzole…"
-                    await refreshConsoles()
-                    return
-                }
-                switch result["error"] as? String ?? "" {
-                case "authorization_pending": break
-                case "slow_down": interval += 5
-                default:
-                    throw XboxError.message("Microsoft přihlášení: \(result["error"] as? String ?? "neznámá chyba")")
-                }
-            }
-            status = cancelled ? "Přihlášení zrušeno" : "Platnost přihlašovacího kódu vypršela"
+            status = persisted
+                ? "Kód je připraven. Přihlas se na stránce Microsoftu."
+                : "Kód je připraven, ale iOS nepovolil bezpečné uložení. Nezavírej aplikaci."
+            resumeLoginIfNeeded()
         } catch {
-            currentCode = nil
-            status = error.localizedDescription
+            status = "Nelze získat kód Microsoftu: \(error.localizedDescription)"
         }
     }
 
