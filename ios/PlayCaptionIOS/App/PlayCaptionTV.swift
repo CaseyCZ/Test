@@ -208,6 +208,30 @@ final class PlayCaptionTV: ObservableObject {
         sendDatagram(Data(packet.utf8), to: target, reportStatus: false)
     }
 
+    private var choicesSequence: UInt64 {
+        // Choices are delivered through their own sequence counter in Android.
+        sequence += 1
+        return sequence
+    }
+
+    /// PCV1 is accepted by the original PlayCaption TV receiver. No guessed
+    /// selected option: -1 is neutral until highlight detection is implemented.
+    /// A selected value of -2 signals the Android "Text" (letter/SMS) mode.
+    func sendChoices(_ items: [String], area: CGRect,
+                     asText: Bool = false,
+                     showFrame: Bool = false) {
+        let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return }
+        let escaped = items.joined(separator: "\n")
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\t", with: " ")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        let frameFlag = showFrame ? 1 : 0
+        let chosen = asText ? -2 : -1
+        let packet = "PCV1\t\(choicesSequence)\t\(frameFlag)\t\(area.minX)\t\(area.minY)\t\(area.maxX)\t\(area.maxY)\t\(chosen)\t\(escaped)"
+        sendDatagram(Data(packet.utf8), to: target, reportStatus: false)
+    }
+
     private func sendDatagram(_ payload: Data, to target: String, reportStatus: Bool) {
         let connection = NWConnection(host: NWEndpoint.Host(target),
                                       port: NWEndpoint.Port(rawValue: 41989)!,
