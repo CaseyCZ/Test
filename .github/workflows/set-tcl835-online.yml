@@ -1,0 +1,91 @@
+name: TCL C835 - online diagnostické režimy
+
+on:
+  workflow_dispatch:
+    inputs:
+      profil:
+        description: "Co chceme na TCL otestovat?"
+        required: true
+        default: "gpu-test"
+        type: choice
+        options:
+          - gpu-test
+          - hdmi-normal
+          - cpu-no-lock
+          - decoder-default
+          - original-behaviour
+      interval:
+        description: "Interval podrobného logu v sekundách"
+        required: true
+        default: "5"
+        type: choice
+        options:
+          - "5"
+          - "10"
+          - "30"
+          - "60"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tcl835-config
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout configuration
+        uses: actions/checkout@v4
+        with:
+          ref: Master
+          persist-credentials: true
+
+      - name: Update only approved diagnostic options
+        env:
+          PROFIL: ${{ inputs.profil }}
+          INTERVAL: ${{ inputs.interval }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          profiles = {
+              'gpu-test': (True, True, 'no_gpu'),
+              'hdmi-normal': (False, True, 'no_gpu'),
+              'cpu-no-lock': (True, False, 'no_gpu'),
+              'decoder-default': (True, True, 'default'),
+              'original-behaviour': (False, False, 'default'),
+          }
+          profile = os.environ['PROFIL']
+          if profile not in profiles:
+              raise SystemExit('Unrecognized test mode')
+          seconds = int(os.environ['INTERVAL'])
+          if seconds not in [5, 10, 30, 60]:
+              raise SystemExit('Unrecognized interval')
+          overlay, cpu, decoder = profiles[profile]
+          config = {
+              'schema': 1,
+              'traceIntervalSeconds': seconds,
+              'forceHdmiOverlay': overlay,
+              'keepCpuAwake': cpu,
+              'decoderMode': decoder,
+          }
+          p = pathlib.Path('config/tcl835.json')
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+          print('New diagnostic mode:', config)
+          PY
+
+      - name: Commit selected online test
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/tcl835.json
+          if git diff --cached --quiet; then
+            echo "Requested configuration already active."
+            exit 0
+          fi
+          git commit -m "TCL C835 diagnostic profile: ${{ inputs.profil }}"
+          git push origin HEAD:Master
