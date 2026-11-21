@@ -73,12 +73,45 @@ final class CaptionAppModel: ObservableObject {
     @Published var outputLocked = UserDefaults.standard.bool(forKey: "outputLocked") {
         didSet { UserDefaults.standard.set(outputLocked, forKey: "outputLocked") }
     }
+    // Independent yellow answer-choice region, equivalent to Android's Volby.
+    // Disabled by default: dialogue OCR remains unchanged until user enables it.
+    @Published var choicesEnabled = UserDefaults.standard.bool(forKey: "choicesEnabled") {
+        didSet {
+            UserDefaults.standard.set(choicesEnabled, forKey: "choicesEnabled")
+            Task { await pipeline.resetOptions() }
+            if !choicesEnabled { tv.sendChoices([], area: choicesArea) }
+        }
+    }
+    @Published var choicesTextMode = UserDefaults.standard.bool(forKey: "choicesTextMode") {
+        didSet { UserDefaults.standard.set(choicesTextMode, forKey: "choicesTextMode") }
+    }
+    @Published var choicesLocked = UserDefaults.standard.bool(forKey: "choicesLocked") {
+        didSet { UserDefaults.standard.set(choicesLocked, forKey: "choicesLocked") }
+    }
+    @Published var choicesArea: CGRect = {
+        let fallback = CGRect(x: 0.55, y: 0.45, width: 0.40, height: 0.35)
+        guard let data = UserDefaults.standard.data(forKey: "choicesArea"),
+              let rect = try? JSONDecoder().decode(CGRect.self, from: data),
+              rect.width >= 0.1, rect.height >= 0.05,
+              rect.minX >= 0, rect.minY >= 0,
+              rect.maxX <= 1, rect.maxY <= 1
+        else { return fallback }
+        return rect
+    }() {
+        didSet {
+            if let data = try? JSONEncoder().encode(choicesArea) {
+                UserDefaults.standard.set(data, forKey: "choicesArea")
+            }
+        }
+    }
+    @Published var lastChoices = ""
     @Published var logLines: [String] = []
 
     let tv = PlayCaptionTV()
     let xbox = XboxAuthorization()
     private let pipeline = CaptionPipeline()
     private var remotePlay: XboxRemotePlay?
+    private var processingChoices = false
 
     init() {
         tv.onPairingData = { [weak self] fields in
@@ -111,6 +144,34 @@ final class CaptionAppModel: ObservableObject {
             Task { @MainActor in
                 guard let self, self.isRunning else { return }
                 self.frameCount += 1
+
+                // Choices use an independent region and may be translated while
+                // standard captions continue; don't block dialogue reading.
+                if self.choicesEnabled && !self.processingChoices {
+                    self.processingChoices = true
+                    let area = self.choicesArea
+                    let asText = self.choicesTextMode
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        defer { self.processingChoices = false }
+                        guard let englishChoices = await self.pipeline.recognizeOptions(
+                            buffer, area: area, asText: asText
+                        ) else { return }
+                        var translated = [String]()
+                        for option in englishChoices {
+                            let item = await self.pipeline.translate(option)
+                            guard self.isRunning, self.choicesEnabled else { return }
+                            translated.append(item)
+                        }
+                        guard self.isRunning, self.choicesEnabled,
+                              self.choicesArea == area,
+                              self.choicesTextMode == asText else { return }
+                        self.lastChoices = translated.joined(separator: " · ")
+                        self.tv.sendChoices(translated, area: area, asText: asText)
+                        self.write("Volby: \(translated.count) rozpoznaných položek")
+                    }
+                }
+
                 if let english = await self.pipeline.recognize(
                     buffer, region: self.subtitleRegion,
                     manualArea: self.manualOCR ? self.manualOCRBox : nil,
@@ -142,6 +203,8 @@ final class CaptionAppModel: ObservableObject {
         isRunning = false
         UIApplication.shared.isIdleTimerDisabled = false
         tv.sendSubtitle("", duration: 0)
+        tv.sendChoices([], area: choicesArea)
+        lastChoices = ""
         status = "Zastaveno"
     }
 
