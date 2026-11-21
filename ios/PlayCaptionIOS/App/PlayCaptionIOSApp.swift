@@ -154,53 +154,94 @@ struct ContentView: View {
 struct XboxRemotePlayView: View {
     @EnvironmentObject var model: CaptionAppModel
     @ObservedObject var auth: XboxAuthorization
-    @State private var selection: XboxConsole?
+    @AppStorage("selectedXboxServerID") private var selectedXboxServerID = ""
 
+    // Never silently choose a console; people may own several Xboxes.
+    // The same server ID remains selected after reloading the account.
     private var selectedConsole: XboxConsole? {
-        if let selection, let latest = auth.consoles.first(where: { $0.id == selection.id }) {
-            return latest
-        }
-        return auth.consoles.count == 1 ? auth.consoles.first : nil
+        auth.consoles.first(where: { $0.id == selectedXboxServerID })
     }
 
     var body: some View {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if auth.consoles.isEmpty {
-                                Text("Žádná konzole. Nejdřív klepni na Načíst moje konzole.")
-                                    .foregroundStyle(.secondary)
-                            } else if auth.consoles.count == 1, let console = auth.consoles.first {
-                                Label("Xbox: \(console.name)", systemImage: "gamecontroller.fill")
-                                Text("Stav konzole: \(console.powerState)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            } else {
-                                Menu {
-                                    ForEach(auth.consoles) { console in
-                                        Button("\(console.name) · \(console.powerState)") {
-                                            selection = console
-                                        }
-                                    }
-                                } label: {
-                                    Label(selectedConsole?.name ?? "Vyber Xbox", systemImage: "gamecontroller.fill")
-                                }
-                            }
-                            Text(model.status).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Spustit překlad") {
-                                    if let console = selectedConsole { model.start(console) }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.red)
-                                .disabled(selectedConsole == nil || model.isRunning)
-                                Button("Zastavit") { model.stop() }
-                                    .buttonStyle(.bordered)
-                                    .disabled(!model.isRunning)
-                            }
-                            Text("Snímky: \(model.frameCount)\nEN: \(model.lastEnglish)\nCZ: \(model.lastCzech)")
-                                .font(.footnote.monospaced())
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text("Během překladu nech iPhone odemčený a aplikaci otevřenou. iOS může spojení na pozadí pozastavit.")
-                                .font(.caption).foregroundStyle(.orange)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Dostupné Xboxy: \(auth.consoles.count)")
+                    .font(.subheadline)
+                Spacer()
+                Button {
+                    Task { await auth.refreshConsoles() }
+                } label: {
+                    Label("Obnovit", systemImage: "arrow.clockwise")
+                }
+                .font(.subheadline)
+                .disabled(!auth.signedIn || model.isRunning)
+            }
+
+            Menu {
+                if auth.consoles.isEmpty {
+                    Text("Zatím žádný Xbox")
+                }
+                ForEach(auth.consoles) { console in
+                    Button {
+                        selectedXboxServerID = console.id
+                    } label: {
+                        if selectedXboxServerID == console.id {
+                            Label("\(console.name) · \(console.powerState)", systemImage: "checkmark")
+                        } else {
+                            Text("\(console.name) · \(console.powerState)")
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Label(selectedConsole?.name ?? "Vyber Xbox", systemImage: "gamecontroller.fill")
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(12)
+                .background(.gray.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .disabled(auth.consoles.isEmpty || model.isRunning)
+
+            if auth.consoles.isEmpty {
+                Text("Nenašla se žádná konzole. Klepni na Obnovit.")
+                    .font(.caption).foregroundStyle(.orange)
+            } else if auth.consoles.count == 1 {
+                Text("Xbox služba vrátila jen jednu konzoli. Pokud používáš více Xboxů, klepni na Obnovit a ověř, že jsou pod tímto účtem povolené vzdálené funkce.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            if let selectedConsole {
+                Text("Vybráno: \(selectedConsole.name) · \(selectedConsole.powerState)")
+                    .font(.caption).foregroundStyle(.green)
+            }
+
+            Text(model.status).foregroundStyle(.secondary)
+            HStack {
+                Button("Spustit překlad") {
+                    guard let console = selectedConsole else { return }
+                    model.start(console)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(selectedConsole == nil || model.isRunning)
+                Button("Zastavit") { model.stop() }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.isRunning)
+            }
+            Text("Snímky: \(model.frameCount)\nEN: \(model.lastEnglish)\nCZ: \(model.lastCzech)")
+                .font(.footnote.monospaced())
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Během překladu nech iPhone odemčený a aplikaci otevřenou. iOS může spojení na pozadí pozastavit.")
+                .font(.caption).foregroundStyle(.orange)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task {
+            if auth.signedIn && auth.consoles.isEmpty {
+                await auth.refreshConsoles()
+            }
+        }
     }
 }
 
