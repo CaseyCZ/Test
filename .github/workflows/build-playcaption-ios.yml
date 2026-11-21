@@ -18,6 +18,17 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare original PlayCaption Android launcher icon (private test)
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/playcaption-official-icon.png"
+          DST="ios/PlayCaptionIOS/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          curl --fail --show-error --location --retry 3 --retry-delay 2 \
+            "https://raw.githubusercontent.com/AdamRuzick4/PlayCaption-app/master/app/src/main/res/drawable-nodpi/gamelingo_ikona.png" \
+            --output "$SRC"
+          file "$SRC"
+          swift ios/PlayCaptionIOS/scripts/make_official_icon.swift "$SRC" "$DST"
+          sips -g pixelWidth -g pixelHeight "$DST"
       - name: Xcode and project generator
         run: |
           xcodebuild -version
