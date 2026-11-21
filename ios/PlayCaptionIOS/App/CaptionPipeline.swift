@@ -40,8 +40,12 @@ actor CaptionPipeline {
 
     func recognize(_ buffer: CVPixelBuffer,
                    region: SubtitleRegion,
+                   manualArea: CGRect?,
                    filterMenus: Bool) -> String? {
-        let settings = "\(region.rawValue)|\(filterMenus)"
+        let roi = manualArea.map { CGRect(
+            x: $0.minX, y: 1 - $0.maxY, width: $0.width, height: $0.height
+        ) } ?? region.rect
+        let settings = "\(roi)|\(filterMenus)"
         if settings != lastSettings {
             lastSettings = settings
             lastText = ""
@@ -55,7 +59,7 @@ actor CaptionPipeline {
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
         request.usesLanguageCorrection = true
-        request.regionOfInterest = region.rect
+        request.regionOfInterest = roi
 
         do {
             try VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform([request])
