@@ -104,6 +104,15 @@ struct ContentView: View {
     @EnvironmentObject var model: CaptionAppModel
     @State private var selection: XboxConsole?
 
+    // When only one Xbox is registered, no manual picker is needed. Resolve by
+    // stable serverId so a refreshed console list doesn't invalidate selection.
+    private var selectedConsole: XboxConsole? {
+        if let selection, let latest = model.xbox.consoles.first(where: { $0.id == selection.id }) {
+            return latest
+        }
+        return model.xbox.consoles.count == 1 ? model.xbox.consoles.first : nil
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -117,21 +126,32 @@ struct ContentView: View {
                     }
                     GroupBox("3 · Vzdálené hraní") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Picker("Konzole", selection: $selection) {
-                                Text("Vyber Xbox").tag(Optional<XboxConsole>.none)
-                                ForEach(model.xbox.consoles) { c in
-                                    Text("\(c.name) · \(c.powerState)").tag(Optional(c))
+                            if model.xbox.consoles.isEmpty {
+                                Text("Žádná konzole. Nejdřív klepni na Načíst moje konzole.")
+                                    .foregroundStyle(.secondary)
+                            } else if model.xbox.consoles.count == 1, let console = model.xbox.consoles.first {
+                                Label("Xbox: \(console.name)", systemImage: "gamecontroller.fill")
+                                Text("Stav konzole: \(console.powerState)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Menu {
+                                    ForEach(model.xbox.consoles) { console in
+                                        Button("\(console.name) · \(console.powerState)") {
+                                            selection = console
+                                        }
+                                    }
+                                } label: {
+                                    Label(selectedConsole?.name ?? "Vyber Xbox", systemImage: "gamecontroller.fill")
                                 }
                             }
-                            .tint(.white)
                             Text(model.status).foregroundStyle(.secondary)
                             HStack {
                                 Button("Spustit překlad") {
-                                    if let console = selection { model.start(console) }
+                                    if let console = selectedConsole { model.start(console) }
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.red)
-                                .disabled(selection == nil || model.isRunning)
+                                .disabled(selectedConsole == nil || model.isRunning)
                                 Button("Zastavit") { model.stop() }
                                     .buttonStyle(.bordered)
                                     .disabled(!model.isRunning)
