@@ -9,8 +9,7 @@ on:
       - "tools/patch_tcl835.py"
       - "tools/TclDiagnostika.kt"
       - "tools/TclOnlineNastaveni.kt"
-      - "tools/TclOdesilacLogu.kt"
-      - "collector/**"
+      - "tools/TclGitHubOdeslani.kt"
   pull_request:
     branches: [Master]
     paths:
@@ -18,8 +17,7 @@ on:
       - "tools/patch_tcl835.py"
       - "tools/TclDiagnostika.kt"
       - "tools/TclOnlineNastaveni.kt"
-      - "tools/TclOdesilacLogu.kt"
-      - "collector/**"
+      - "tools/TclGitHubOdeslani.kt"
 
 permissions:
   contents: read
@@ -71,18 +69,13 @@ jobs:
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
-      - name: Validate private collector and authentication
-        run: |
-          node --check kit/collector/server.cjs
-          node --test kit/collector/test-server.cjs
-
       - name: Apply TCL diagnostic patch
         run: |
           python -m py_compile kit/tools/patch_tcl835.py
           python kit/tools/patch_tcl835.py upstream
           test -s upstream/app/src/main/java/cz/titulky/tv/TclDiagnostika.kt
           test -s upstream/app/src/main/java/cz/titulky/tv/TclOnlineNastaveni.kt
-          test -s upstream/app/src/main/java/cz/titulky/tv/TclOdesilacLogu.kt
+          test -s upstream/app/src/main/java/cz/titulky/tv/TclGitHubOdeslani.kt
           grep -q "TCL C835 HDMI TRACE" upstream/app/src/main/java/cz/titulky/tv/Zaznam.kt
 
       - name: Select Gradle compatible with Android Gradle Plugin 8.5.2
@@ -113,8 +106,7 @@ jobs:
             kit/tools/patch_tcl835.py
             kit/tools/TclDiagnostika.kt
             kit/tools/TclOnlineNastaveni.kt
-            kit/tools/TclOdesilacLogu.kt
-            kit/collector/server.cjs
+            kit/tools/TclGitHubOdeslani.kt
             kit/README.md
           if-no-files-found: error
           retention-days: 14
