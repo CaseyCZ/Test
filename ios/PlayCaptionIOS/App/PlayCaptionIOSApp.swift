@@ -27,6 +27,14 @@ final class CaptionAppModel: ObservableObject {
     @Published var lastCzech = ""
     @Published var frameCount = 0
     @Published var isRunning = false
+    @Published var subtitleRegion: SubtitleRegion = SubtitleRegion(
+        rawValue: UserDefaults.standard.string(forKey: "subtitleRegion") ?? ""
+    ) ?? .center {
+        didSet { UserDefaults.standard.set(subtitleRegion.rawValue, forKey: "subtitleRegion") }
+    }
+    @Published var filterMenuText = (UserDefaults.standard.object(forKey: "filterMenuText") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(filterMenuText, forKey: "filterMenuText") }
+    }
     @Published var logLines: [String] = []
 
     let tv = PlayCaptionTV()
@@ -65,7 +73,7 @@ final class CaptionAppModel: ObservableObject {
             Task { @MainActor in
                 guard let self, self.isRunning else { return }
                 self.frameCount += 1
-                if let english = await self.pipeline.recognize(buffer) {
+                if let english = await self.pipeline.recognize(buffer, region: self.subtitleRegion, filterMenus: self.filterMenuText) {
                     self.lastEnglish = english
                     self.write("OCR: \(english)")
                     let czech = await self.pipeline.translate(english)
@@ -217,6 +225,21 @@ struct XboxRemotePlayView: View {
                     .font(.caption).foregroundStyle(.green)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Rozpoznávání titulků")
+                    .font(.subheadline.bold())
+                Picker("Oblast titulků", selection: $model.subtitleRegion) {
+                    ForEach(SubtitleRegion.allCases) { region in
+                        Text(region.title).tag(region)
+                    }
+                }
+                .pickerStyle(.menu)
+                Toggle("Filtrovat texty herního menu", isOn: $model.filterMenuText)
+                    .font(.subheadline)
+                Text("Čte se jen vybraná oblast obrazu. Pokud titulky ve hře leží jinde, zvol širší oblast. Filtr menu může skrýt i dialogy psané VELKÝMI PÍSMENY.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text(model.status).foregroundStyle(.secondary)
             HStack {
                 Button("Spustit překlad") {
