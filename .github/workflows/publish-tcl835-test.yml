@@ -1,4 +1,4 @@
-name: Publish TCL C835 GPU TEST APK as GitHub Release
+name: Publish TCL C835 GitHub Log TEST APK
 
 on:
   workflow_dispatch:
@@ -17,8 +17,8 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: v0.22-tcl835-gpu-test.2
-      BUILD_RUN: "44892877605"
+      TAG: v0.22-tcl835-github-log.1
+      BUILD_RUN: "44915442206"
     steps:
       - name: Checkout TCL diagnostic source patch
         uses: actions/checkout@v4
@@ -42,43 +42,45 @@ jobs:
             --name TCL-C835-Caption-GPU-TEST --dir dist
           APK=$(find dist -type f -name 'app-debug.apk' -print -quit)
           test -n "$APK" && test -s "$APK"
-          cp "$APK" dist/TCL-C835-Caption-GPU-TEST-v0.22.apk
-          sha256sum dist/TCL-C835-Caption-GPU-TEST-v0.22.apk
+          cp "$APK" dist/TCL-C835-GitHub-Log-TEST-v0.22.apk
+          sha256sum dist/TCL-C835-GitHub-Log-TEST-v0.22.apk
 
       - name: Assemble matching AGPLv3 source snapshot
         shell: bash
         run: |
           set -euo pipefail
           python3 kit/tools/patch_tcl835.py upstream
-          tar -czf dist/TCL-C835-Caption-GPU-TEST-v0.22-source.tar.gz \
+          tar -czf dist/TCL-C835-GitHub-Log-TEST-v0.22-source.tar.gz \
             --exclude=.git --exclude=.gradle --exclude=build \
             -C upstream .
-          test -s dist/TCL-C835-Caption-GPU-TEST-v0.22-source.tar.gz
-          sha256sum dist/TCL-C835-Caption-GPU-TEST-v0.22-source.tar.gz
+          test -s dist/TCL-C835-GitHub-Log-TEST-v0.22-source.tar.gz
+          sha256sum dist/TCL-C835-GitHub-Log-TEST-v0.22-source.tar.gz
 
       - name: Write release notes
         shell: bash
         run: |
           cat > release-notes.md <<'EOF'
-          ## TCL Caption GPU TEST · v0.22 · TCL C835 / Xbox Series X
+          ## TCL Caption GitHub Log TEST · v0.22 · TCL C835 / Xbox Series X
 
           **Experimental diagnostic build. Not a confirmed fix for HDMI source switching.**
 
           - Based on original PlayCaption v0.22 (upstream commit 633a847).
           - Separate app ID `cz.titulky.tv.tcl835gpudiag` and independent branding.
-          - Tries to keep the CPU awake during active television Remote Play.
-          - Temporarily permits captions despite an unrecognized foreground TV package.
+          - Optional CPU keep-awake during television Remote Play, remotely configurable.
+          - Optional HDMI overlay visibility override, remotely configurable.
           - Logs foreground changes, task removal and service shutdown.
-          - **Test 2 change:** Xbox Remote Play WebRTC decoder is created without an EGL context (the path already used by the Android phone). This tests whether TCL GPU texture handling contributes to the HDMI freezes.
-          - Logs Xbox video frame progress every 10 seconds while frames are arriving. Not a confirmed fix.
+          - Xbox Remote Play decoder mode can switch between standard and no-EGL-GPU via public online JSON (on the next connection).
+          - Logs HDMI foreground, Xbox ICE, decoded frames, service lifecycle and overlay state.
+          - **New button in built-in diagnostics:** Send Log to GitHub. Opens a new prefilled issue in CaseyCZ/Test in a TV browser. Log goes public **only after the user signs in and confirms GitHub Submit new issue**.
+          - No Oracle server, background log upload, or GitHub token embedded in the APK.
 
-          **Install:** Download `TCL-C835-Caption-GPU-TEST-v0.22.apk` and install it on TCL C835. Disable the original app/phone session before connecting this test build to Xbox Remote Play. Permit **Draw over other apps**, select **Jen televize**, and then switch to HDMI. Test whether Remote Play stays connected and whether Czech subtitles remain visible.
+          **Install:** Download `TCL-C835-GitHub-Log-TEST-v0.22.apk` and install it on TCL C835. Disable the original app/phone session before connecting this test build to Xbox Remote Play. Permit **Draw over other apps**, select **Jen televize**, and then switch to HDMI. Test whether Remote Play stays connected and whether Czech subtitles remain visible.
 
           **Caution:** Captions may also appear on the Google TV launcher. The patch does not bypass TCL firmware or guarantee an HDMI fix. Avoid publishing Xbox tokens or personal details from diagnostic logs.
 
-          **License:** GNU AGPLv3. Matching patched sources: `TCL-C835-Caption-GPU-TEST-v0.22-source.tar.gz`. Original © Adam Růžička and contributors. Independent experimental project, not endorsed by the author, TCL or Microsoft.
+          **License:** GNU AGPLv3. Matching patched sources: `TCL-C835-GitHub-Log-TEST-v0.22-source.tar.gz`. Original © Adam Růžička and contributors. Independent experimental project, not endorsed by the author, TCL or Microsoft.
 
-          Build result: https://github.com/CaseyCZ/Test/actions/runs/44892877605
+          Build result: https://github.com/CaseyCZ/Test/actions/runs/44915442206
           EOF
 
       - name: Publish pre-release with APK and corresponding sources
@@ -90,10 +92,10 @@ jobs:
             exit 1
           fi
           gh release create "$TAG" \
-            dist/TCL-C835-Caption-GPU-TEST-v0.22.apk \
-            dist/TCL-C835-Caption-GPU-TEST-v0.22-source.tar.gz \
+            dist/TCL-C835-GitHub-Log-TEST-v0.22.apk \
+            dist/TCL-C835-GitHub-Log-TEST-v0.22-source.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "TCL Caption GPU TEST 0.22 – TCL C835 (EGL diagnostic)" \
+            --title "TCL Caption GitHub Log TEST 0.22 – TCL C835" \
             --notes-file release-notes.md \
             --prerelease
