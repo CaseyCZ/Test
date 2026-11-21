@@ -45,11 +45,17 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK platform and tools
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GitHub ubuntu-latest already provides the command-line SDK manager.
+          # setup-android@v3 fails in 2026 while requesting the removed 'tools' package.
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
       - name: Apply TCL diagnostic patch
         run: |
