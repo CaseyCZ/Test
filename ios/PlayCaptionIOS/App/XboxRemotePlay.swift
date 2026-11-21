@@ -43,16 +43,26 @@ final class XboxRemotePlay: NSObject {
         let access = try await authorization.streamingAccess()
         self.access = access
         if ended { return }
+        info("Spouštím vzdálené hraní na Xboxu: \(console.name)…")
         let headers = await authorization.streamHeaders(access)
-        let session = try await authorization.request(
-            "\(access.baseURL)/v5/sessions/home/play",
-            method: "POST",
-            json: ["clientSessionId": "", "titleId": "", "systemUpdateGroup": "",
-                   "settings": ["nanoVersion": "V3;WebrtcTransport.dll",
-                                "enableTextToSpeech": false, "highContrast": 0,
-                                "locale": "en-US", "useIceConnection": false,
-                                "timezoneOffsetMinutes": 60, "sdkType": "web", "osName": "android"]],
-            headers: headers)
+        // Match PlayCaption Android's xHome session schema exactly.
+        // Without serverId the backend cannot route the request to the chosen console.
+        let session: [String: Any]
+        do {
+            session = try await authorization.request(
+                "\(access.baseURL)/v5/sessions/home/play",
+                method: "POST",
+                json: ["clientSessionId": "", "titleId": "", "systemUpdateGroup": "",
+                       "serverId": console.id, "fallbackRegionNames": [String](),
+                       "settings": ["nanoVersion": "V3;WebrtcTransport.dll",
+                                    "enableTextToSpeech": false, "highContrast": 0,
+                                    "locale": "en-US", "useIceConnection": false,
+                                    "timezoneOffsetMinutes": 60, "sdkType": "web", "osName": "android"]],
+                headers: headers)
+        } catch {
+            throw XboxError.message("Spuštění relace Xbox: \(error.localizedDescription)")
+        }
+        info("Relace Xbox vytvořena, čekám na připravenost konzole…")
         guard let path = session["sessionPath"] as? String else {
             throw XboxError.message("Xbox nevrátil sessionPath")
         }
