@@ -87,6 +87,28 @@ final class XboxAuthorization: ObservableObject {
     private var cachedStreaming: XboxStreamingAccess?
     private var cancelled = false
 
+    /// Accepts the existing Android PlayCaption PCS1 DATA format after a user-entered
+    /// four-digit TV code. Never log or display these fields: the LAN protocol is
+    /// plaintext UDP, so only pair on a trusted local network.
+    func importPairedXbox(_ fields: [String]) -> Bool {
+        guard fields.count > 2, fields[0] == "PCS1", fields[1] == "DATA",
+              let index = fields.firstIndex(where: { $0.hasPrefix("X:") }),
+              let encoded = fields[index].split(separator: ":", maxSplits: 1).last,
+              let data = Data(base64Encoded: String(encoded)),
+              let refresh = String(data: data, encoding: .utf8), !refresh.isEmpty
+        else { return false }
+
+        SecureTokenStore.put(refresh)
+        cancelled = false
+        cachedAccess = nil
+        cachedStreaming = nil
+        currentCode = nil
+        signedIn = true
+        status = "Xbox účet převzat z televize. Ověřuji konzole…"
+        Task { await refreshConsoles() }
+        return true
+    }
+
     func signOut() {
         cancelled = true
         SecureTokenStore.clear()
