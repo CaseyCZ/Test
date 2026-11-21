@@ -1,0 +1,97 @@
+name: Publish TCL C835 test APK as GitHub Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [Master]
+    paths:
+      - ".github/workflows/publish-tcl835-test.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v0.22-tcl835-test.1
+      BUILD_RUN: "44891489729"
+    steps:
+      - name: Checkout TCL diagnostic source patch
+        uses: actions/checkout@v4
+        with:
+          path: kit
+          persist-credentials: false
+
+      - name: Checkout original PlayCaption 0.22 sources
+        uses: actions/checkout@v4
+        with:
+          repository: AdamRuzick4/PlayCaption-app
+          ref: 633a847400b6c4bac1e7f034463e7847a53a9590
+          path: upstream
+          persist-credentials: false
+
+      - name: Obtain previously compiled and verified APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$BUILD_RUN" -R "$GITHUB_REPOSITORY" \
+            --name TCL-C835-Caption-TEST --dir dist
+          APK=$(find dist -type f -name 'app-debug.apk' -print -quit)
+          test -n "$APK" && test -s "$APK"
+          cp "$APK" dist/TCL-C835-Caption-TEST-v0.22.apk
+          sha256sum dist/TCL-C835-Caption-TEST-v0.22.apk
+
+      - name: Assemble matching AGPLv3 source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 kit/tools/patch_tcl835.py upstream
+          tar -czf dist/TCL-C835-Caption-TEST-v0.22-source.tar.gz \
+            --exclude=.git --exclude=.gradle --exclude=build \
+            -C upstream .
+          test -s dist/TCL-C835-Caption-TEST-v0.22-source.tar.gz
+          sha256sum dist/TCL-C835-Caption-TEST-v0.22-source.tar.gz
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## TCL Caption TEST · v0.22 · TCL C835 / Xbox Series X
+
+          **Experimental diagnostic build. Not a confirmed fix for HDMI source switching.**
+
+          - Based on original PlayCaption v0.22 (upstream commit 633a847).
+          - Separate app ID `cz.titulky.tv.tcl835test` and independent branding.
+          - Tries to keep the CPU awake during active television Remote Play.
+          - Temporarily permits captions despite an unrecognized foreground TV package.
+          - Writes diagnostics for foreground changes, task removal and service shutdown.
+
+          **Install:** Download `TCL-C835-Caption-TEST-v0.22.apk` and install it on TCL C835. Disable the original app/phone session before connecting this test build to Xbox Remote Play. Permit **Draw over other apps**, select **Jen televize**, and then switch to HDMI. Test whether Remote Play stays connected and whether Czech subtitles remain visible.
+
+          **Caution:** Captions may also appear on the Google TV launcher. The patch does not bypass TCL firmware or guarantee an HDMI fix. Avoid publishing Xbox tokens or personal details from diagnostic logs.
+
+          **License:** GNU AGPLv3. Matching patched sources: `TCL-C835-Caption-TEST-v0.22-source.tar.gz`. Original © Adam Růžička and contributors. Independent experimental project, not endorsed by the author, TCL or Microsoft.
+
+          Build result: https://github.com/CaseyCZ/Test/actions/runs/44891489729
+          EOF
+
+      - name: Publish pre-release with APK and corresponding sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, refusing to overwrite."
+            exit 1
+          fi
+          gh release create "$TAG" \
+            dist/TCL-C835-Caption-TEST-v0.22.apk \
+            dist/TCL-C835-Caption-TEST-v0.22-source.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TCL Caption TEST 0.22 – TCL C835 (diagnostic)" \
+            --notes-file release-notes.md \
+            --prerelease
