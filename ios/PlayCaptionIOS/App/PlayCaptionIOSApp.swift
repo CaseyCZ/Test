@@ -44,14 +44,19 @@ final class CaptionAppModel: ObservableObject {
         didSet { UserDefaults.standard.set(manualOCRLocked, forKey: "manualOCRLocked") }
     }
     @Published var manualOCRBox: CGRect = {
-        guard let value = UserDefaults.standard.string(forKey: "manualOCRBox") else {
-            return CGRect(x: 0.10, y: 0.72, width: 0.80, height: 0.25)
-        }
-        let rect = CGRectFromString(value)
-        return rect.width >= 0.1 && rect.height >= 0.04
-            ? rect : CGRect(x: 0.10, y: 0.72, width: 0.80, height: 0.25)
+        let fallback = CGRect(x: 0.10, y: 0.72, width: 0.80, height: 0.25)
+        guard let data = UserDefaults.standard.data(forKey: "manualOCRBox"),
+              let rect = try? JSONDecoder().decode(CGRect.self, from: data),
+              rect.width >= 0.1, rect.height >= 0.04,
+              rect.minX >= 0, rect.minY >= 0, rect.maxX <= 1, rect.maxY <= 1
+        else { return fallback }
+        return rect
     }() {
-        didSet { UserDefaults.standard.set(NSStringFromCGRect(manualOCRBox), forKey: "manualOCRBox") }
+        didSet {
+            if let data = try? JSONEncoder().encode(manualOCRBox) {
+                UserDefaults.standard.set(data, forKey: "manualOCRBox")
+            }
+        }
     }
     @Published var outputX: Double = (UserDefaults.standard.object(forKey: "outputX") as? Double) ?? 0.5 {
         didSet { UserDefaults.standard.set(outputX, forKey: "outputX") }
