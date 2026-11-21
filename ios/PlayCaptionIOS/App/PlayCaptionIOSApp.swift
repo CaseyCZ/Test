@@ -102,16 +102,6 @@ final class CaptionAppModel: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject var model: CaptionAppModel
-    @State private var selection: XboxConsole?
-
-    // When only one Xbox is registered, no manual picker is needed. Resolve by
-    // stable serverId so a refreshed console list doesn't invalidate selection.
-    private var selectedConsole: XboxConsole? {
-        if let selection, let latest = model.xbox.consoles.first(where: { $0.id == selection.id }) {
-            return latest
-        }
-        return model.xbox.consoles.count == 1 ? model.xbox.consoles.first : nil
-    }
 
     var body: some View {
         NavigationStack {
@@ -125,43 +115,7 @@ struct ContentView: View {
                         XboxAccountView(auth: model.xbox)
                     }
                     GroupBox("3 · Vzdálené hraní") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if model.xbox.consoles.isEmpty {
-                                Text("Žádná konzole. Nejdřív klepni na Načíst moje konzole.")
-                                    .foregroundStyle(.secondary)
-                            } else if model.xbox.consoles.count == 1, let console = model.xbox.consoles.first {
-                                Label("Xbox: \(console.name)", systemImage: "gamecontroller.fill")
-                                Text("Stav konzole: \(console.powerState)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            } else {
-                                Menu {
-                                    ForEach(model.xbox.consoles) { console in
-                                        Button("\(console.name) · \(console.powerState)") {
-                                            selection = console
-                                        }
-                                    }
-                                } label: {
-                                    Label(selectedConsole?.name ?? "Vyber Xbox", systemImage: "gamecontroller.fill")
-                                }
-                            }
-                            Text(model.status).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Spustit překlad") {
-                                    if let console = selectedConsole { model.start(console) }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.red)
-                                .disabled(selectedConsole == nil || model.isRunning)
-                                Button("Zastavit") { model.stop() }
-                                    .buttonStyle(.bordered)
-                                    .disabled(!model.isRunning)
-                            }
-                            Text("Snímky: \(model.frameCount)\nEN: \(model.lastEnglish)\nCZ: \(model.lastCzech)")
-                                .font(.footnote.monospaced())
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text("Během překladu nech iPhone odemčený a aplikaci otevřenou. iOS může spojení na pozadí pozastavit.")
-                                .font(.caption).foregroundStyle(.orange)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        XboxRemotePlayView(auth: model.xbox)
                     }
                     GroupBox("Diagnostika") {
                         VStack(alignment: .leading) {
@@ -191,6 +145,62 @@ struct ContentView: View {
             Text("Xbox → české titulky → Google TV")
                 .font(.subheadline).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity).padding(.vertical, 9)
+    }
+}
+
+/// Observe XboxAuthorization directly: the parent model does not forward its
+/// objectWillChange notifications, so console discovery otherwise updates
+/// the account card but leaves this section stuck at "Žádná konzole".
+struct XboxRemotePlayView: View {
+    @EnvironmentObject var model: CaptionAppModel
+    @ObservedObject var auth: XboxAuthorization
+    @State private var selection: XboxConsole?
+
+    private var selectedConsole: XboxConsole? {
+        if let selection, let latest = auth.consoles.first(where: { $0.id == selection.id }) {
+            return latest
+        }
+        return auth.consoles.count == 1 ? auth.consoles.first : nil
+    }
+
+    var body: some View {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if auth.consoles.isEmpty {
+                                Text("Žádná konzole. Nejdřív klepni na Načíst moje konzole.")
+                                    .foregroundStyle(.secondary)
+                            } else if auth.consoles.count == 1, let console = auth.consoles.first {
+                                Label("Xbox: \(console.name)", systemImage: "gamecontroller.fill")
+                                Text("Stav konzole: \(console.powerState)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Menu {
+                                    ForEach(auth.consoles) { console in
+                                        Button("\(console.name) · \(console.powerState)") {
+                                            selection = console
+                                        }
+                                    }
+                                } label: {
+                                    Label(selectedConsole?.name ?? "Vyber Xbox", systemImage: "gamecontroller.fill")
+                                }
+                            }
+                            Text(model.status).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Spustit překlad") {
+                                    if let console = selectedConsole { model.start(console) }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.red)
+                                .disabled(selectedConsole == nil || model.isRunning)
+                                Button("Zastavit") { model.stop() }
+                                    .buttonStyle(.bordered)
+                                    .disabled(!model.isRunning)
+                            }
+                            Text("Snímky: \(model.frameCount)\nEN: \(model.lastEnglish)\nCZ: \(model.lastCzech)")
+                                .font(.footnote.monospaced())
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("Během překladu nech iPhone odemčený a aplikaci otevřenou. iOS může spojení na pozadí pozastavit.")
+                                .font(.caption).foregroundStyle(.orange)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
