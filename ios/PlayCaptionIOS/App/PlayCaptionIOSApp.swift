@@ -35,6 +35,39 @@ final class CaptionAppModel: ObservableObject {
     @Published var filterMenuText = (UserDefaults.standard.object(forKey: "filterMenuText") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(filterMenuText, forKey: "filterMenuText") }
     }
+    // Android-compatible manual OCR rectangle (normalized coordinates with
+    // top-left origin). The default matches OblastTitulku.VYCHOZI.
+    @Published var manualOCR = UserDefaults.standard.bool(forKey: "manualOCR") {
+        didSet { UserDefaults.standard.set(manualOCR, forKey: "manualOCR") }
+    }
+    @Published var manualOCRLocked = UserDefaults.standard.bool(forKey: "manualOCRLocked") {
+        didSet { UserDefaults.standard.set(manualOCRLocked, forKey: "manualOCRLocked") }
+    }
+    @Published var manualOCRBox: CGRect = {
+        guard let value = UserDefaults.standard.string(forKey: "manualOCRBox") else {
+            return CGRect(x: 0.10, y: 0.72, width: 0.80, height: 0.25)
+        }
+        let rect = CGRectFromString(value)
+        return rect.width >= 0.1 && rect.height >= 0.04
+            ? rect : CGRect(x: 0.10, y: 0.72, width: 0.80, height: 0.25)
+    }() {
+        didSet { UserDefaults.standard.set(NSStringFromCGRect(manualOCRBox), forKey: "manualOCRBox") }
+    }
+    @Published var outputX: Double = (UserDefaults.standard.object(forKey: "outputX") as? Double) ?? 0.5 {
+        didSet { UserDefaults.standard.set(outputX, forKey: "outputX") }
+    }
+    @Published var outputBottom: Double = (UserDefaults.standard.object(forKey: "outputBottom") as? Double) ?? 0.93 {
+        didSet { UserDefaults.standard.set(outputBottom, forKey: "outputBottom") }
+    }
+    @Published var outputWidth: Double = (UserDefaults.standard.object(forKey: "outputWidth") as? Double) ?? 0.62 {
+        didSet { UserDefaults.standard.set(outputWidth, forKey: "outputWidth") }
+    }
+    @Published var outputFont: Double = (UserDefaults.standard.object(forKey: "outputFont") as? Double) ?? 1.0 {
+        didSet { UserDefaults.standard.set(outputFont, forKey: "outputFont") }
+    }
+    @Published var outputLocked = UserDefaults.standard.bool(forKey: "outputLocked") {
+        didSet { UserDefaults.standard.set(outputLocked, forKey: "outputLocked") }
+    }
     @Published var logLines: [String] = []
 
     let tv = PlayCaptionTV()
@@ -73,7 +106,11 @@ final class CaptionAppModel: ObservableObject {
             Task { @MainActor in
                 guard let self, self.isRunning else { return }
                 self.frameCount += 1
-                if let english = await self.pipeline.recognize(buffer, region: self.subtitleRegion, filterMenus: self.filterMenuText) {
+                if let english = await self.pipeline.recognize(
+                    buffer, region: self.subtitleRegion,
+                    manualArea: self.manualOCR ? self.manualOCRBox : nil,
+                    filterMenus: self.filterMenuText
+                ) {
                     self.lastEnglish = english
                     self.write("OCR: \(english)")
                     let czech = await self.pipeline.translate(english)
@@ -163,6 +200,7 @@ struct XboxRemotePlayView: View {
     @EnvironmentObject var model: CaptionAppModel
     @ObservedObject var auth: XboxAuthorization
     @AppStorage("selectedXboxServerID") private var selectedXboxServerID = ""
+    @State private var showSubtitleSettings = false
 
     // Never silently choose a console; people may own several Xboxes.
     // The same server ID remains selected after reloading the account.
@@ -228,17 +266,15 @@ struct XboxRemotePlayView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Rozpoznávání titulků")
                     .font(.subheadline.bold())
-                Picker("Oblast titulků", selection: $model.subtitleRegion) {
-                    ForEach(SubtitleRegion.allCases) { region in
-                        Text(region.title).tag(region)
-                    }
+                Text(model.manualOCR ? "Ručně vymezená oblast" : "Automatické čtení spodní části")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button {
+                    showSubtitleSettings = true
+                } label: {
+                    Label("Nastavit oblast čtení a polohu titulků", systemImage: "rectangle.dashed")
                 }
-                .pickerStyle(.menu)
-                Toggle("Filtrovat texty herního menu", isOn: $model.filterMenuText)
-                    .font(.subheadline)
-                Text("Čte se jen vybraná oblast obrazu. Pokud titulky ve hře leží jinde, zvol širší oblast. Filtr menu může skrýt i dialogy psané VELKÝMI PÍSMENY.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
             }
             Text(model.status).foregroundStyle(.secondary)
             HStack {
@@ -264,6 +300,9 @@ struct XboxRemotePlayView: View {
             if auth.signedIn && auth.consoles.isEmpty {
                 await auth.refreshConsoles()
             }
+        }
+        .sheet(isPresented: $showSubtitleSettings) {
+            SubtitleSettingsView(model: model)
         }
     }
 }
