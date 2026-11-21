@@ -33,6 +33,38 @@ internal object TclDiagnostika {
         }
     }
 
+    /**
+     * On next Activity launch, ask Android whether it killed the previous process.
+     * API 30+ returns reasons even if onDestroy was never called.
+     * No private trace or device identifiers are exported.
+     */
+    fun historieUkonceni(ctx: Context) {
+        if (android.os.Build.VERSION.SDK_INT < 30) {
+            zapis(ctx, "[EXIT HISTORY] unavailable (Android < 11)")
+            return
+        }
+        runCatching {
+            val pref = ctx.getSharedPreferences("tcl_hdmi_exit", Context.MODE_PRIVATE)
+            val previous = pref.getLong("last_exit_recorded", 0L)
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val exits = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 10)
+                .filter { it.timestamp > previous && it.timestamp <= System.currentTimeMillis() }
+                .sortedBy { it.timestamp }
+            if (exits.isEmpty()) {
+                zapis(ctx, "[EXIT HISTORY] no new Android process termination recorded")
+            } else {
+                for (item in exits.takeLast(5)) {
+                    zapis(ctx, "[EXIT HISTORY] timeMs=" + item.timestamp +
+                        " reasonCode=" + item.reason + " status=" + item.status +
+                        " importance=" + item.importance)
+                }
+                pref.edit().putLong("last_exit_recorded", exits.last().timestamp).apply()
+            }
+        }.onFailure { e ->
+            zapis(ctx, "[EXIT HISTORY] unavailable " + e.javaClass.simpleName)
+        }
+    }
+
     fun system(ctx: Context): String = runCatching {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         "interactive=" + pm.isInteractive +
