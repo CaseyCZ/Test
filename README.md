@@ -42,6 +42,31 @@ Ve větvi `diagnostics/tcl835-hdmi-trace` je diagnostický režim **bez změny s
 
 Log **nečte skutečné HDMI hardware události** a neposílá data ven. Neobsahuje titulky, účty ani tokeny, ale před veřejným sdílením i tak zkontroluj původní `titulky.log`/`xbox.log`.
 
+## Online přepínače bez přeinstalace APK
+
+Rozšířená testovací APK (teprve po úspěšném buildu z této větve) bude načítat
+[online konfiguraci z GitHubu](https://github.com/CaseyCZ/Test/blob/Master/config/tcl835.json).
+Při aktivní službě si ji kontroluje přibližně každou minutu; pokud je TV offline,
+ponechá poslední načtené nastavení během aktuálního běhu. Výchozí hodnoty jsou
+totožné se současným GPU experimentem.
+
+| Klíč | Hodnoty | Účel |
+| --- | --- | --- |
+| `traceIntervalSeconds` | 5–60 | Interval souhrnného logu |
+| `forceHdmiOverlay` | true / false | Zobrazovat překryv i tehdy, když se HDMI nerozpozná |
+| `keepCpuAwake` | true / false | Diagnostické udržení CPU při Remote Play |
+| `decoderMode` | `no_gpu` / `default` | Xbox dekodér bez GPU textur / standardní |
+
+**Jak upravit:** na GitHubu otevřít odkaz na JSON → tužka **Edit** → změnit hodnotu
+→ **Commit changes**. Pokud měním konfiguraci já, upravím stejný soubor;
+televize si ji načte sama. Novou APK potřebujeme jen při změně skutečného
+kódu, oprávnění, služeb či samotného formátu online nastavení.
+
+Bezpečnost: HTTPS, pouze čtení veřejného konfiguračního souboru, pevný seznam
+klíčů, žádné stahování ani spouštění vzdáleného kódu. Aplikace **neodesílá
+logy ani Xbox přihlašovací údaje**. Pro vyhodnocení stále musíme získat
+diagnostický výpis z TV. Bez znalosti výsledku testu nelze potvrdit opravu HDMI.
+
 ## Zdroj, licence a autorství
 
 Původní aplikace [AdamRuzick4/PlayCaption-app](https://github.com/AdamRuzick4/PlayCaption-app) © Adam Růžička a přispěvatelé je vydána pod **GNU AGPLv3**. Toto experimentální rozšíření a jeho úpravy jsou také pod GNU AGPLv3. Odpovídající zdrojový kód testovací APK vzniká kombinací konkrétního upstream commitu [633a847](https://github.com/AdamRuzick4/PlayCaption-app/commit/633a847400b6c4bac1e7f034463e7847a53a9590) a zdejšího skriptu [tools/patch_tcl835.py](tools/patch_tcl835.py). Build workflow je součástí tohoto repozitáře. Název ani logo autora se pro označení testovací aplikace nepoužívá.
