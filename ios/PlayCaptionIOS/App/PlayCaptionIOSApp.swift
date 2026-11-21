@@ -1,15 +1,21 @@
 import SwiftUI
 import UIKit
+import SafariServices
 
 @main
 struct PlayCaptionIOSApp: App {
     @StateObject private var model = CaptionAppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
                 .preferredColorScheme(.dark)
+                .onAppear { model.xbox.resumeLoginIfNeeded() }
+                .onChange(of: scenePhase) { _, phase in
+                    model.xbox.setApplicationActive(phase == .active)
+                }
         }
     }
 }
@@ -213,20 +219,44 @@ struct TVSelectionView: View {
     }
 }
 
+private struct MicrosoftSignInSafari: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
+
 struct XboxAccountView: View {
     @ObservedObject var auth: XboxAuthorization
+    @State private var showMicrosoftBrowser = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !auth.signedIn {
-                Button("Přihlásit Microsoft účet") {
-                    Task { await auth.beginLogin() }
-                }.buttonStyle(.borderedProminent).tint(.red)
+                if auth.currentCode == nil {
+                    Button("Přihlásit Microsoft účet") {
+                        Task { await auth.beginLogin() }
+                    }.buttonStyle(.borderedProminent).tint(.red)
+                }
                 if let code = auth.currentCode {
-                    Text("Otevři microsoft.com/link a zadej:")
+                    Text("Na stránce Microsoftu zadej tento kód:")
                     Text(code.userCode)
                         .font(.title.monospaced().bold())
                         .textSelection(.enabled)
-                    Link("Otevřít Microsoft", destination: URL(string: code.verificationURL)!)
+                    HStack {
+                        Button("Kopírovat kód") {
+                            UIPasteboard.general.string = code.userCode
+                        }.buttonStyle(.bordered)
+                        Button("Otevřít Microsoft") {
+                            showMicrosoftBrowser = true
+                        }.buttonStyle(.borderedProminent).tint(.red)
+                    }
+                    Text("Po přihlášení zavři prohlížeč tlačítkem Hotovo. Aplikace bude pokračovat se stejným kódem.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Znovu ověřit přihlášení") { auth.resumeLoginIfNeeded() }
+                        .font(.caption)
                 }
             } else {
                 Text("Účet přihlášen").foregroundStyle(.green)
@@ -238,5 +268,13 @@ struct XboxAccountView: View {
             Text(auth.status).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $showMicrosoftBrowser, onDismiss: {
+            auth.resumeLoginIfNeeded()
+        }) {
+            if let code = auth.currentCode, let url = URL(string: code.verificationURL),
+               url.scheme?.lowercased() == "https" {
+                MicrosoftSignInSafari(url: url)
+            }
+        }
     }
 }
