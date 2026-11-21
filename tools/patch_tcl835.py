@@ -246,6 +246,64 @@ def main() -> None:
         "        tlacitka += tlacitko(t(\"diagKonec\")) { posuv.post { posuv.fullScroll(View.FOCUS_DOWN) } }\n",
         "        tlacitka += tlacitko(t(\"diagKonec\")) { posuv.post { posuv.fullScroll(View.FOCUS_DOWN) } }\n        tlacitka += tlacitko(\"Odeslat log na GitHub\") { TclGitHubOdeslani.otevri(a) }\n")
 
+    # Local display test inside separate TCL test APK; upstream remains unchanged.
+    main = root / "app/src/main/java/cz/titulky/tv/MainActivity.kt"
+    replace_once(main,
+        '        val zpet = tlacitko(t("prijemZpetKratce"), 20f) { zpetNaVyber() }.apply {\n',
+        '''        // Independent local test: no Xbox, phone, pairing, OCR or translation.
+        val mistniVysledek = text("Místní zkouška funguje bez telefonu a Xboxu.", 16f, TEXT2)
+        val mistniTlacitko = tlacitko("🧪 Testovací titulek TV", 20f) {
+            val dovoleno = Settings.canDrawOverlays(this)
+            TclDiagnostika.zapis(this, "[SELF TEST] pressed permission=" + dovoleno +
+                " receiverRunning=" + PrijemService.bezi +
+                " overlayReady=" + OverlayService.pripravena)
+            if (!dovoleno) {
+                mistniVysledek.text = "TEST NEPROŠEL: chybí oprávnění Zobrazovat přes jiné aplikace."
+            } else {
+                mistniVysledek.text = "Test byl odeslán. Sleduj, zda se objeví bílý text na černém pozadí."
+                OverlayService.posli(this, Intent(this, OverlayService::class.java)
+                    .setAction(OverlayService.ACTION_SET_TEXT)
+                    .putExtra(OverlayService.EXTRA_TEXT, "TCL C835 – ZKUŠEBNÍ TITULEK")
+                    .putExtra(OverlayService.EXTRA_DOBA, 12000L))
+                ui.postDelayed({
+                    if (obrazovka == "prijem") {
+                        val hotovo = OverlayService.pripravena
+                        val chyba = OverlayService.chyba?.klic ?: "žádná"
+                        TclDiagnostika.zapis(this, "[SELF TEST] overlayReady=" + hotovo +
+                            " overlayError=" + chyba)
+                        mistniVysledek.text = if (hotovo)
+                            "Vrstva hlásí připraveno. Pokud text nevidíš, test NEPROŠEL; otevři Záznam."
+                        else
+                            "TEST NEPROŠEL: titulková vrstva není připravená. Otevři Záznam."
+                    }
+                }, 1200L)
+            }
+        }
+        sloupec.addView(mistniTlacitko, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(12); gravity = Gravity.CENTER_HORIZONTAL
+        })
+        sloupec.addView(mistniVysledek, odsazeni(top = 8))
+        val zpet = tlacitko(t("prijemZpetKratce"), 20f) { zpetNaVyber() }.apply {
+''')
+
+    # Log receipt and rendering separately. No subtitle text, IP or account data.
+    replace_once(root / "app/src/main/java/cz/titulky/tv/PrijemService.kt",
+        '            zapisDiagnostiku("[TV příjem] PCT1 přijat, znaků=${text.length}, vstupTV=$vstup, oprávnění překryvu=${android.provider.Settings.canDrawOverlays(this)}")\n',
+        '''            zapisDiagnostiku("[TV příjem] PCT1 přijat, znaků=${text.length}, vstupTV=$vstup, oprávnění překryvu=${android.provider.Settings.canDrawOverlays(this)}")
+            TclDiagnostika.zapis(this, "[TV RECEIVE TEXT] chars=" + text.length +
+                " inputAllowed=" + vstup + " overlayReady=" + OverlayService.pripravena)
+''')
+
+    replace_once(root / "app/src/main/java/cz/titulky/tv/OverlayService.kt",
+        '            showText(obarvi(text, intent.getIntArrayExtra(EXTRA_BARVY_JMEN)), intent.getLongExtra(EXTRA_DOBA, 6000))\n',
+        '''            showText(obarvi(text, intent.getIntArrayExtra(EXTRA_BARVY_JMEN)), intent.getLongExtra(EXTRA_DOBA, 6000))
+            TclDiagnostika.zapis(this, "[OVERLAY TEXT] chars=" + text.length +
+                " ready=" + pripravena + " visible=" +
+                (textView?.visibility == android.view.View.VISIBLE) +
+                " permission=" + android.provider.Settings.canDrawOverlays(this))
+''')
+
     print("TCL Caption GPU TEST ready; independent package: cz.titulky.tv.tcl835gpudiag")
 
 
