@@ -31,14 +31,20 @@ internal object TclOdesilacLogu {
     private val odesilam = AtomicBoolean(false)
     @Volatile private var posledniPokus = -MIN_INTERVAL_MS
     @Volatile private var posledniOtisk = ""
+    @Volatile private var posledniUrgentniPokus = -60_000L
 
-    fun zkusOdeslat(ctx: Context) {
+    fun zkusOdeslat(ctx: Context, urgent: Boolean = false) {
         if (!TclOnlineNastaveni.logUploadEnabled) return
         val endpoint = TclOnlineNastaveni.logUploadEndpoint
         if (!endpoint.startsWith("https://")) return
 
         val ted = SystemClock.elapsedRealtime()
-        if (ted - posledniPokus < MIN_INTERVAL_MS || !odesilam.compareAndSet(false, true)) return
+        // Force one useful end-of-session report, but never flood the collector.
+        if (urgent) {
+            if (ted - posledniUrgentniPokus < MIN_INTERVAL_MS) return
+            posledniUrgentniPokus = ted
+        } else if (ted - posledniPokus < MIN_INTERVAL_MS) return
+        if (!odesilam.compareAndSet(false, true)) return
         posledniPokus = ted
         val app = ctx.applicationContext
         Thread({
