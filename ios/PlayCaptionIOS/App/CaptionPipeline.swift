@@ -81,6 +81,52 @@ actor CaptionPipeline {
         }
     }
 
+    // Dedicated OCR lane for the optional Android-style yellow response area.
+    // It never changes the standard dialogue OCR region.
+    private var lastOptions = [String]()
+    private var lastOptionsRead = Date.distantPast
+    private var lastOptionsSettings = ""
+
+    /// The area uses top-left normalized screen coordinates, unlike Vision.
+    /// Returns nil when unchanged; [] when choices disappeared and TV should clear.
+    func recognizeOptions(_ buffer: CVPixelBuffer,
+                          area: CGRect,
+                          asText: Bool) -> [String]? {
+        let signature = "\(area)|\(asText)"
+        if signature != lastOptionsSettings {
+            lastOptionsSettings = signature
+            lastOptions = []
+            lastOptionsRead = .distantPast
+        }
+        guard Date().timeIntervalSince(lastOptionsRead) > 1.0 else { return nil }
+        lastOptionsRead = Date()
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        request.usesLanguageCorrection = true
+        request.regionOfInterest = CGRect(x: area.minX,
+                                           y: 1 - area.maxY,
+                                           width: area.width, height: area.height)
+        do {
+            try VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform([request])
+            let lines = (request.results ?? [])
+                .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+                .compactMap { $0.topCandidates(1).first?.string
+                    .trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { $0.filter { $0.isLetter }.count >= 3 }
+
+            let output = asText
+                ? (lines.isEmpty ? [] : [lines.joined(separator: " ")])
+                : Array(lines.prefix(6))
+            guard output != lastOptions else { return nil }
+            lastOptions = output
+            return output
+        } catch {
+            return nil
+        }
+    }
+
     /// Conservative, optional filter for many uppercase short menu labels.
     /// Not perfect: all-uppercase in-game dialogue can be excluded; users can
     /// switch the filter off without affecting the Remote Play session.
