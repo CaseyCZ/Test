@@ -10,7 +10,7 @@ import javax.net.ssl.HttpsURLConnection
 /**
  * Remote settings only for an explicitly installed TCL diagnostic APK.
  * Downloads a small JSON document from the owner's public GitHub repository.
- * Never executes downloaded code, never sends diagnostic logs or account data.
+ * Never executes downloaded code. Opt-in diagnostics are sent only to the owner's configured HTTPS collector.
  * Settings remain in memory if a refresh fails.
  */
 internal object TclOnlineNastaveni {
@@ -26,6 +26,10 @@ internal object TclOnlineNastaveni {
     @Volatile var zamykatCpu = true
         private set
     @Volatile var dekoderBezGpu = true
+        private set
+    @Volatile var logUploadEnabled = false
+        private set
+    @Volatile var logUploadEndpoint = ""
         private set
     @Volatile var revize = 0
         private set
@@ -57,17 +61,27 @@ internal object TclOnlineNastaveni {
                         "no_gpu" -> true
                         else -> error("Unknown decoderMode")
                     }
+                    val upload = json.optBoolean("logUploadEnabled", false)
+                    val endpoint = json.optString("logUploadEndpoint", "").trim()
+                    if (upload && (!endpoint.startsWith("https://") ||
+                        !endpoint.endsWith("/v1/logs") || endpoint.length > 240)) {
+                        error("Invalid HTTPS collector URL")
+                    }
                     val zmena = intervalLoguSekund != interval ||
                         vynutitPrekryv != prekryv || zamykatCpu != cpu ||
-                        dekoderBezGpu != decoder
+                        dekoderBezGpu != decoder || logUploadEnabled != upload ||
+                        logUploadEndpoint != endpoint
                     intervalLoguSekund = interval
                     vynutitPrekryv = prekryv
                     zamykatCpu = cpu
                     dekoderBezGpu = decoder
+                    logUploadEnabled = upload
+                    logUploadEndpoint = endpoint
                     if (zmena) revize++
                     TclDiagnostika.zapis(app, "[ONLINE CONFIG] loaded changed=" + zmena +
                         " intervalSec=" + interval + " overlayOverride=" + prekryv +
                         " cpuLock=" + cpu + " decoderNoGpu=" + decoder +
+                        " uploadEnabled=" + upload +
                         " (decoder takes effect on next connection)")
                 } finally {
                     c.disconnect()
