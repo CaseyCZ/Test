@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Mirrors the Android PlayCaption phone's miniature 16:9 television:
-/// blue = OCR input area, green = final Czech subtitle position.
+/// blue = OCR input area, green = Czech subtitle output, yellow = game responses.
 struct SubtitleSettingsView: View {
     @ObservedObject var model: CaptionAppModel
     @Environment(\.dismiss) private var dismiss
@@ -10,6 +10,7 @@ struct SubtitleSettingsView: View {
     private enum Area: String, CaseIterable {
         case reading = "Čtení"
         case output = "Zobrazení"
+        case choices = "Volby odpovědí"
     }
 
     /// Green rectangle represents where the TV places Czech captions.
@@ -25,13 +26,14 @@ struct SubtitleSettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Stejně jako na Androidu můžeš posunout a změnit velikost oblasti, ze které iPhone čte anglické titulky. Poloha českého překladu na TCL je nezávislá.")
+                    Text("Stejně jako na Androidu můžeš upravit modrou oblast anglických dialogů, zelenou polohu českých titulků a samostatný žlutý rámeček pro volby či texty ve hře.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
                     Picker("Co upravovat", selection: $editing) {
                         Text("Modrý · Čtení").tag(Area.reading)
                         Text("Zelený · Titulky na TV").tag(Area.output)
+                        Text("Žlutý · Volby").tag(Area.choices)
                     }
                     .pickerStyle(.segmented)
 
@@ -42,8 +44,10 @@ struct SubtitleSettingsView: View {
 
                     if editing == .reading {
                         readControls
-                    } else {
+                    } else if editing == .output {
                         outputControls
+                    } else {
+                        choicesControls
                     }
                 }
                 .padding(16)
@@ -79,6 +83,12 @@ struct SubtitleSettingsView: View {
                         .font(.caption2)
                         .foregroundStyle(.blue)
                         .padding(8)
+                }
+                if model.choicesEnabled {
+                    rectangle(model.choicesArea, color: .yellow,
+                              name: model.choicesTextMode ? "Text" : "Volby",
+                              selected: editing == .choices,
+                              size: geo.size)
                 }
 
                 Color.clear
@@ -125,12 +135,18 @@ struct SubtitleSettingsView: View {
             rect.origin.x = max(0, min(1 - rect.width, x - rect.width / 2))
             rect.origin.y = max(0, min(1 - rect.height, y - rect.height / 2))
             model.manualOCRBox = rect
-        } else {
+        } else if editing == .output {
             guard !model.outputLocked else { return }
             let width = CGFloat(model.outputWidth)
             let h = CGFloat(0.12 * model.outputFont)
             model.outputX = Double(max(width / 2, min(1 - width / 2, x)))
             model.outputBottom = Double(max(h, min(1, y + h / 2)))
+        } else {
+            guard model.choicesEnabled, !model.choicesLocked else { return }
+            var rect = model.choicesArea
+            rect.origin.x = max(0, min(1 - rect.width, x - rect.width / 2))
+            rect.origin.y = max(0, min(1 - rect.height, y - rect.height / 2))
+            model.choicesArea = rect
         }
     }
 
@@ -209,6 +225,65 @@ struct SubtitleSettingsView: View {
         }
     }
 
+    private var choicesControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Žlutý rámeček – volby odpovědí a herní texty")
+                .font(.headline)
+            Toggle("Překládat volby / texty", isOn: $model.choicesEnabled)
+            if model.choicesEnabled {
+                Picker("Typ obsahu", selection: $model.choicesTextMode) {
+                    Text("Volby odpovědí").tag(false)
+                    Text("Text (dopisy, SMS)").tag(true)
+                }
+                .pickerStyle(.segmented)
+                Toggle("Zamknout žlutý rámeček", isOn: $model.choicesLocked)
+                if !model.choicesLocked {
+                    Text("Šířka: \(Int(model.choicesArea.width * 100)) %")
+                    Slider(value: Binding(
+                        get: { Double(model.choicesArea.width) },
+                        set: { updateChoicesSize(width: CGFloat($0), height: nil) }
+                    ), in: 0.10...1.0)
+                    Text("Výška: \(Int(model.choicesArea.height * 100)) %")
+                    Slider(value: Binding(
+                        get: { Double(model.choicesArea.height) },
+                        set: { updateChoicesSize(width: nil, height: CGFloat($0)) }
+                    ), in: 0.10...1.0)
+                }
+                Button("Ukázat žlutý rámeček na TCL") {
+                    model.tv.sendChoices([], area: model.choicesArea,
+                                         asText: model.choicesTextMode, showFrame: true)
+                }
+                .buttonStyle(.bordered)
+                .tint(.yellow)
+                if !model.lastChoices.isEmpty {
+                    Text("Poslední rozpoznané: \(model.lastChoices)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Obnovit výchozí oblast podle Androidu") {
+                    model.choicesArea = CGRect(x: 0.55, y: 0.45,
+                                               width: 0.40, height: 0.35)
+                    showOnTV()
+                }.font(.subheadline)
+                Text("Experimentální režim: iPhone už umí číst a posílat volby nebo text do původního PlayCaption. Zatím ale neurčuje, která možnost je ve hře zvýrazněná; to doplníme po testu.")
+                    .font(.caption).foregroundStyle(.orange)
+            } else {
+                Text("Volby jsou vypnuté, takže OCR dál čte pouze oblast dialogových titulků.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func updateChoicesSize(width: CGFloat?, height: CGFloat?) {
+        var area = model.choicesArea
+        let center = CGPoint(x: area.midX, y: area.midY)
+        if let width { area.size.width = width }
+        if let height { area.size.height = height }
+        area.origin.x = max(0, min(1 - area.width, center.x - area.width / 2))
+        area.origin.y = max(0, min(1 - area.height, center.y - area.height / 2))
+        model.choicesArea = area
+    }
+
     private func updateOCRSize(width: CGFloat?, height: CGFloat?) {
         var area = model.manualOCRBox
         let center = CGPoint(x: area.midX, y: area.midY)
@@ -223,8 +298,12 @@ struct SubtitleSettingsView: View {
         if editing == .reading {
             guard model.manualOCR else { return }
             model.tv.showOCRRegion(model.manualOCRBox, visible: true)
-        } else {
+        } else if editing == .output {
             model.tv.sendSubtitle("Ukázka českých titulků", duration: 6000, preview: true)
+        } else {
+            guard model.choicesEnabled else { return }
+            model.tv.sendChoices([], area: model.choicesArea,
+                                 asText: model.choicesTextMode, showFrame: true)
         }
     }
 }
