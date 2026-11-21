@@ -329,8 +329,9 @@ final class XboxAuthorization: ObservableObject {
         }
     }
 
-    private func tokenResponse(_ form: [String: String]) async throws -> [String: Any] {
-        let url = URL(string: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token")!
+    private func tokenResponse(_ form: [String: String],
+                               endpoint: String = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token") async throws -> [String: Any] {
+        let url = URL(string: endpoint)!
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.httpBody = encode(form)
@@ -363,10 +364,12 @@ final class XboxAuthorization: ObservableObject {
     func transferToken() async throws -> String {
         _ = try await microsoftToken()
         guard let refresh = SecureTokenStore.get() else { throw XboxError.message("Chybí přihlášení") }
+        // Xbox console transfer uses the legacy Live token endpoint in the
+        // working Android reference. The consumers/v2 endpoint is not interchangeable.
         let result = try await tokenResponse([
             "client_id": clientID, "grant_type": "refresh_token", "refresh_token": refresh,
             "scope": "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"
-        ])
+        ], endpoint: "https://login.live.com/oauth20_token.srf")
         guard let value = result["access_token"] as? String else {
             throw XboxError.message("Xbox nevrátil token pro připojení ke konzoli")
         }
