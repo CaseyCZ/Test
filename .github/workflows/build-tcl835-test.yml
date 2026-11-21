@@ -9,6 +9,7 @@ on:
       - "tools/patch_tcl835.py"
       - "tools/TclDiagnostika.kt"
       - "tools/TclOnlineNastaveni.kt"
+      - "tools/TclOdesilacLogu.kt"
   pull_request:
     branches: [Master]
     paths:
@@ -16,6 +17,7 @@ on:
       - "tools/patch_tcl835.py"
       - "tools/TclDiagnostika.kt"
       - "tools/TclOnlineNastaveni.kt"
+      - "tools/TclOdesilacLogu.kt"
 
 permissions:
   contents: read
@@ -73,6 +75,7 @@ jobs:
           python kit/tools/patch_tcl835.py upstream
           test -s upstream/app/src/main/java/cz/titulky/tv/TclDiagnostika.kt
           test -s upstream/app/src/main/java/cz/titulky/tv/TclOnlineNastaveni.kt
+          test -s upstream/app/src/main/java/cz/titulky/tv/TclOdesilacLogu.kt
           grep -q "TCL C835 HDMI TRACE" upstream/app/src/main/java/cz/titulky/tv/Zaznam.kt
 
       - name: Select Gradle compatible with Android Gradle Plugin 8.5.2
@@ -103,6 +106,8 @@ jobs:
             kit/tools/patch_tcl835.py
             kit/tools/TclDiagnostika.kt
             kit/tools/TclOnlineNastaveni.kt
+            kit/tools/TclOdesilacLogu.kt
+            kit/collector/server.cjs
             kit/README.md
           if-no-files-found: error
           retention-days: 14
