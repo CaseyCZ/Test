@@ -32,7 +32,7 @@ Ve větvi `diagnostics/tcl835-hdmi-trace` je diagnostický režim **bez změny s
 
 - **Spustit TCL Caption GPU TEST → Jen televize → připojit Xbox → přepnout na HDMI 2.**
 - Po výpadku se vrať do aplikace a otevři diagnostiku: najeď na **logo** a stiskni **OK**.
-- Najdi blok **TCL C835 HDMI TRACE**. Je v něm posledních 120 záznamů z `tcl835-diagnostic.log` s milisekundovým časem, `pid`, ID procesu a dobou běhu.
+- Najdi blok **TCL C835 HDMI TRACE**. K přenosu použij dole **Odeslat log na GitHub**. Je v něm posledních 120 záznamů z `tcl835-diagnostic.log` s milisekundovým časem, `pid`, ID procesu a dobou běhu.
 - **[INPUT]** = aplikace v popředí a výsledek původní HDMI klasifikace; GPU test ji nadále ignoruje, aby nezakrývala titulky.
 - **[RP HEARTBEAT]** každých 5 sekund = stav Remote Play, počet WebRTC snímků, počet zpracovaných snímků, čas od posledního zpracování, stav překryvu a úsporného režimu.
 - **[RTC]** = změny ICE, handshake, první snímek, zamrzlý obraz a ukončení Xbox streamu.
@@ -67,28 +67,28 @@ klíčů, žádné stahování ani spouštění vzdáleného kódu. Aplikace **n
 logy ani Xbox přihlašovací údaje**. Pro vyhodnocení stále musíme získat
 diagnostický výpis z TV. Bez znalosti výsledku testu nelze potvrdit opravu HDMI.
 
-## Automatické odesílání technické diagnostiky
+## Odeslání diagnostiky přímo na GitHub
 
-Rozšířená testovací APK může **po přepnutí HDMI a při výpadku Remote Play**
-odesílat anonymizovanou časovou osu na **tvůj vlastní soukromý HTTPS server**.
-Záznamy zůstávají dostupné v diagnostice TV i tehdy, když spojení vypadne.
+Na testovací TCL C835 otevři diagnostiku přes logo a OK. V dolní liště je
+tlačítko **Odeslat log na GitHub**. Po stisknutí:
 
-- Odesílá se **pouze** vybraná část `tcl835-diagnostic.log`:
-  změny foreground, stavy služby, ICE, počty snímků, čas bez snímku,
-  chyby překryvu. Neodesílají se texty titulků, snímky obrazovky,
-  Xbox účty, tokeny, původní `xbox.log` ani `titulky.log`.
-- Každá TV si vytvoří vlastní podpisový klíč v Android Keystore.
-  Server přijme jen první zařízení spárované během krátkého
-  kontrolovaného okna a každou další zprávu ověří podpisem.
-- Odesílání je ve veřejném `config/tcl835.json` **vypnuté**, dokud
-  neexistuje ověřená HTTPS adresa a server není připraven.
-  Nelze použít GitHub Pages jako příjemce soukromých logů.
-- Server a přesný postup nasazení:
-  [collector/README.md](collector/README.md).
-- **ChatGPT nemůže automaticky přijímat soubory z internetu přímo do
-  otevřené konverzace.** Po uložení na tvém serveru je potřeba
-  poskytnout přístupný výpis nebo propojený soukromý repozitář.
-  Tím pak můžu log analyzovat bez fotek z TV.
+1. APK vybere poslední technické události z `tcl835-diagnostic.log` – stav
+   Xbox ICE, počet přijatých snímků, čas bez obrazu, rozpoznání HDMI a stav služby.
+2. Otevře se nové hlášení na [GitHub Issues](https://github.com/CaseyCZ/Test/issues)
+   se **samostatně předvyplněným** názvem a textem diagnostiky.
+3. Přihlas se na GitHub, prohlédni výpis a potvrď **Submit new issue**.
+   Hlášení pak půjde otevřít a analyzovat prostřednictvím GitHub propojení.
+
+**Žádný server, automatický upload ani token v APK nejsou potřeba.** Protože
+repozitář `CaseyCZ/Test` je **veřejný**, zveřejněné issue je také veřejné.
+Do odesílaného výpisu patří pouze whitelistované technické události – ne
+originální `xbox.log`, `titulky.log`, tokeny ani texty titulků.
+
+GitHub neumožňuje neautorizované jedním požadavkem založené issues:
+**jedno potvrzení přímo na GitHubu je nutné**. Televize musí mít dostupný
+prohlížeč. Pokud není, otevření odkazu selže a log zůstává uložený v TV.
+ChatGPT se o novém issue samo okamžitě nedozví, dokud nekontroluje GitHub
+v aktivní konverzaci nebo prostřednictvím samostatného naplánovaného sledování.
 
 ## Zdroj, licence a autorství
 
