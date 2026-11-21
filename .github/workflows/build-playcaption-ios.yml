@@ -27,7 +27,7 @@ jobs:
             "https://raw.githubusercontent.com/AdamRuzick4/PlayCaption-app/master/app/src/main/res/drawable-nodpi/gamelingo_ikona.png" \
             --output "$SRC"
           file "$SRC"
-          swift ios/PlayCaptionIOS/scripts/make_official_icon.swift "$SRC" "$DST"
+          sips -z 1024 1024 "$SRC" --out "$DST" >/dev/null
           sips -g pixelWidth -g pixelHeight "$DST"
       - name: Xcode and project generator
         run: |
