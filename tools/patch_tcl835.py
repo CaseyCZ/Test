@@ -139,6 +139,65 @@ def main() -> None:
         '                log("[TCL C835 GPU TEST] snimku celkem=" + snimku + ", typ=" + f.buffer.javaClass.simpleName)\n'
         '            }\n'
         '            sirka = f.rotatedWidth; vyska = f.rotatedHeight')
+    # Dedicated, privacy-safe diagnostics shown by the built-in diagnostic screen.
+    diagnostic_source = pathlib.Path(__file__).with_name("TclDiagnostika.kt")
+    if not diagnostic_source.is_file():
+        raise RuntimeError("TclDiagnostika.kt must ship with the patch script")
+    (root/"app/src/main/java/cz/titulky/tv/TclDiagnostika.kt").write_text(
+        diagnostic_source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    replace_once(foreground,
+        "    fun jeVstupTv(): Boolean {\n",
+        "    private var tclPosledniVstup: String? = null\n    fun jeVstupTv(): Boolean {\n")
+
+    replace_once(foreground,
+        "        if (!Rezim.jeTelefon(context)) { balicek(); return true }\n",
+        "        if (!Rezim.jeTelefon(context)) {\n            // The GPU test already forces true. Record what normal detection would say.\n            val p = balicek()\n            val info = p?.let { runCatching { pm.getApplicationInfo(it, 0) }.getOrNull() }\n            val realneVstup = when {\n                p == null -> true\n                p == context.packageName -> true\n                p == domov -> false\n                p in ZNAME_VSTUPY -> true\n                info == null -> true\n                else -> {\n                    val systemova = info.flags and ApplicationInfo.FLAG_SYSTEM != 0\n                    val aktualizovana = info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0\n                    val spustitelna = pm.getLeanbackLaunchIntentForPackage(p) != null ||\n                        pm.getLaunchIntentForPackage(p) != null\n                    !(spustitelna && (!systemova || aktualizovana))\n                }\n            }\n            val klic = (p ?: \"unknown\") + \"|\" + realneVstup\n            if (klic != tclPosledniVstup) {\n                tclPosledniVstup = klic\n                TclDiagnostika.zapis(context, \"[INPUT] package=\" + (p ?: \"unknown\") +\n                    \" normalWouldShow=\" + realneVstup + \" gpuTestForcesShow=true\" +\n                    \" usagePermission=\" + Popredi.maOpravneni(context))\n            }\n            return true\n        }\n")
+
+    replace_once(remote,
+        "    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {\n",
+        "    private val tclHlidac = object : Runnable {\n        override fun run() {\n            if (aktivni && !Rezim.jeTelefon(this@RemotePlayService)) {\n                val ted = System.currentTimeMillis()\n                val age = if (snimkuCelkem > 0) ted - posledniSnimekKdy else -1L\n                val balicek = runCatching { popredi.balicek() }.getOrNull() ?: \"unknown\"\n                TclDiagnostika.zapis(this@RemotePlayService,\n                    \"[RP HEARTBEAT] active=\" + aktivni +\n                    \" xbox=\" + naXboxu + \" connected=\" + pripojeno() +\n                    \" receivedFrames=\" + (xbox?.snimku ?: -1L) +\n                    \" processedFrames=\" + snimkuCelkem +\n                    \" lastProcessedAgeMs=\" + age +\n                    \" foreground=\" + balicek +\n                    \" overlayReady=\" + OverlayService.pripravena + \" \" +\n                    TclDiagnostika.system(this@RemotePlayService))\n            }\n            ui.postDelayed(this, 5000L)\n        }\n    }\n\n    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {\n        TclDiagnostika.zapis(this, \"[RP START] action=\" + (intent?.action ?: \"default\") +\n            \" startId=\" + startId + \" flags=\" + flags + \" \" + TclDiagnostika.system(this))\n")
+
+    replace_once(remote,
+        "    override fun onCreate() {\n        super.onCreate()\n",
+        "    override fun onCreate() {\n        super.onCreate()\n        TclDiagnostika.zapis(this, \"[RP CREATE] device=\" +\n            android.os.Build.MANUFACTURER + \"/\" + android.os.Build.MODEL +\n            \" sdk=\" + android.os.Build.VERSION.SDK_INT + \" \" + TclDiagnostika.system(this))\n        ui.postDelayed(tclHlidac, 1000L)\n")
+
+    replace_once(remote,
+        "    override fun onBind(intent: Intent?): IBinder? = null\n",
+        "    override fun onTrimMemory(level: Int) {\n        TclDiagnostika.zapis(this, \"[RP TRIM MEMORY] level=\" + level +\n            \" active=\" + aktivni + \" frames=\" + snimkuCelkem)\n        super.onTrimMemory(level)\n    }\n\n    override fun onLowMemory() {\n        TclDiagnostika.zapis(this, \"[RP LOW MEMORY] active=\" + aktivni)\n        super.onLowMemory()\n    }\n\n    override fun onBind(intent: Intent?): IBinder? = null\n")
+
+    replace_once(remote,
+        "        zapis(\"[TCL C835 TEST] onTaskRemoved\")\n",
+        "        TclDiagnostika.zapis(this, \"[RP TASK REMOVED] \" + TclDiagnostika.system(this))\n        zapis(\"[TCL C835 TEST] onTaskRemoved\")\n")
+
+    replace_once(remote,
+        "        zapis(\"[TCL C835 TEST] RemotePlayService onDestroy\")\n",
+        "        TclDiagnostika.zapis(this, \"[RP DESTROY] active=\" + aktivni + \" receivedFrames=\" + (xbox?.snimku ?: -1L) + \" processedFrames=\" + snimkuCelkem)\n        ui.removeCallbacks(tclHlidac)\n        zapis(\"[TCL C835 TEST] RemotePlayService onDestroy\")\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/XboxLog.kt",
+        "        android.util.Log.i(\"PlayCaptionXbox\", r)\n",
+        "        android.util.Log.i(\"PlayCaptionXbox\", r)\n        // Only sanitized transport and frame state; never server messages or tokens.\n        if (radek.startsWith(\"[Xbox] ICE:\") ||\n            radek.startsWith(\"[Xbox] obraz stojí\") ||\n            radek.startsWith(\"[Xbox] handshake OK\") ||\n            radek.startsWith(\"[Xbox] PRVNÍ SNÍMEK\") ||\n            radek.startsWith(\"[Xbox] konzole ukončila spojení\") ||\n            radek.startsWith(\"[Xbox] ukončeno\") ||\n            radek.startsWith(\"[TCL C835 GPU TEST]\")) {\n            TclDiagnostika.zapis(ctx, \"[RTC] \" + radek)\n        }\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/OverlayService.kt",
+        "        zkusOkna(0)\n",
+        "        zkusOkna(0)\n        TclDiagnostika.zapis(this, \"[OVERLAY CREATE] ready=\" + pripravena + \" \" + TclDiagnostika.system(this))\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/OverlayService.kt",
+        "    override fun onDestroy() {\n        zrusPribeh()\n",
+        "    override fun onDestroy() {\n        TclDiagnostika.zapis(this, \"[OVERLAY DESTROY] ready=\" + pripravena)\n        zrusPribeh()\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/PrijemService.kt",
+        "        if (prijimac == null) {\n",
+        "        if (prijimac == null) {\n            TclDiagnostika.zapis(this, \"[TV RECEIVE START] \" + TclDiagnostika.system(this))\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/PrijemService.kt",
+        "    override fun onDestroy() {\n",
+        "    override fun onDestroy() {\n        TclDiagnostika.zapis(this, \"[TV RECEIVE DESTROY] lastMessageMs=\" + (prijimac?.posledniZprava ?: 0L))\n")
+
+    replace_once(root/"app/src/main/java/cz/titulky/tv/Zaznam.kt",
+        "            \"\\n\\n=== titulky.log ===\\n\" + konec(\"titulky.log\", 120) +\n",
+        "            \"\\n\\n=== TCL C835 HDMI TRACE ===\\n\" + konec(\"tcl835-diagnostic.log\", 120) +\n            \"\\n\\n=== titulky.log ===\\n\" + konec(\"titulky.log\", 120) +\n")
+
     print("TCL Caption GPU TEST ready; independent package: cz.titulky.tv.tcl835gpudiag")
 
 
