@@ -128,7 +128,7 @@ final class CaptionAppModel: ObservableObject {
     /// Output rectangle for text recognized in the yellow region.
     /// This is independent of the green ordinary-dialogue output.
     @Published var choicesOutputArea: CGRect = {
-        let fallback = CGRect(x: 0.18, y: 0.76, width: 0.64, height: 0.16)
+        let fallback = CGRect(x: 0.07, y: 0.43, width: 0.43, height: 0.17)
         guard let data = UserDefaults.standard.data(forKey: "choicesOutputArea"),
               let rect = try? JSONDecoder().decode(CGRect.self, from: data),
               rect.width >= 0.10, rect.height >= 0.05,

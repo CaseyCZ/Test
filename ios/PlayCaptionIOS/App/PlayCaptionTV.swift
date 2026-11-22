@@ -453,8 +453,14 @@ final class PlayCaptionTV: ObservableObject {
         let y = (prefs.object(forKey: "outputBottom") as? Double) ?? 0.93
         let width = (prefs.object(forKey: "outputWidth") as? Double) ?? 0.62
         let font = (prefs.object(forKey: "outputFont") as? Double) ?? 1.0
-        let layout = "\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
-        let payload = Data("PCT1\t\(sequence)\t\(max(0, duration))\t\(clean)\t\(layout)".utf8)
+        // Original PlayCaption 0.22 protocol: field 4 is an empty hint.
+        // Without it the TV misreads X/Y/width and draws a huge black strip.
+        let fields = [
+            "PCT1", String(sequence), String(max(0, duration)),
+            clean, "", String(x), String(y), String(width), String(font),
+            preview ? "1" : "0"
+        ]
+        let payload = Data(fields.joined(separator: "\t").utf8)
         if !sendSignedSubtitle(payload, to: target, reportStatus: true) {
             sendDatagram(payload, to: target, reportStatus: true)
         }
