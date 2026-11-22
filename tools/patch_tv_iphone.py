@@ -162,7 +162,9 @@ def main() -> None:
          '        if (Settings.canDrawOverlays(this)) hratSTelefonem()\n'
          '        else ukazNavodPovoleni()\n')
     once(activity,
+         '        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)\n'
          '        if (obrazovka == "hlavni") ukazHlavni()\n',
+         '        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)\n'
          '        if (Settings.canDrawOverlays(this) && obrazovka != "prijem") {\n'
          '            hratSTelefonem()\n'
          '        }\n')
