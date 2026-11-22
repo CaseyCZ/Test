@@ -58,6 +58,23 @@ def main() -> None:
          '                        posledniCisloTitulku = cislo\n'
          '                        val doba =')
     # Acknowledges the UDP receiver only. No false "displayed" claim.
+    # Official sender layout starts at field 5. Older PlayCaption iOS builds
+    # accidentally include a second tab before X, moving those coordinates to 6.
+    # Accept both without affecting the official PCT1 text/heartbeat format.
+    once(networking,
+         '                        val rozvrh = if (casti.size >= 9 && !casti[5].startsWith("B:")) runCatching {\n'
+         '                            val uprava = if (casti.getOrNull(9)?.trim() == "1") 1f else 0f\n'
+         '                            floatArrayOf(casti[5].toFloat(), casti[6].toFloat(), casti[7].toFloat(), casti[8].toFloat(), uprava)\n'
+         '                        }.getOrNull() else null\n',
+         '                        // iOS v0.2.0 may have an extra empty field after hint.\n'
+         '                        val offset = if (casti.getOrNull(5) == "" &&\n'
+         '                            casti.getOrNull(6)?.toFloatOrNull() != null) 6 else 5\n'
+         '                        val rozvrh = if (casti.size >= offset + 4 &&\n'
+         '                            !casti[offset].startsWith("B:")) runCatching {\n'
+         '                            val uprava = if (casti.getOrNull(offset + 4)?.trim() == "1") 1f else 0f\n'
+         '                            floatArrayOf(casti[offset].toFloat(), casti[offset + 1].toFloat(),\n'
+         '                                casti[offset + 2].toFloat(), casti[offset + 3].toFloat(), uprava)\n'
+         '                        }.getOrNull() else null\n')
     once(networking,
          '                        priTitulku(odEscapuj(casti[3]), doba, odEscapuj(casti[4]), rozvrh, barvy)\n',
          '                        priTitulku(odEscapuj(casti[3]), doba, odEscapuj(casti[4]), rozvrh, barvy)\n'
@@ -76,15 +93,15 @@ def main() -> None:
     before = '        /** Běží režim "titulky z telefonu"? */\n'
     after = '''        /** TV-only diagnostics: first packet, source and live port errors. */
         fun statistikaPrijmu(): String {
-            val instance = instance ?: return "Příjem TV: služba ještě neběží."
-            val p = instance.prijimac ?: return "Příjem TV: čekám na spuštění UDP 41989."
+            val sluzba = this.instance ?: return "Příjem TV: služba ještě neběží."
+            val p = sluzba.prijimac ?: return "Příjem TV: čekám na spuštění UDP 41989."
             val error = p.chyba
             if (error != null) return "Chyba UDP 41989: $error.\\nZastav původní PlayCaption."
             val age = if (p.posledniZprava > 0L)
                 ((System.currentTimeMillis() - p.posledniZprava).coerceAtLeast(0L) / 1000L).toString() + " s"
                 else "dosud žádná"
             val overlays = if (OverlayService.pripravena) "připraven" else "nepřipraven"
-            val hidden = if (instance.skrytyMimoVstup) " / mimo TV vstup" else ""
+            val hidden = if (sluzba.skrytyMimoVstup) " / mimo TV vstup" else ""
             return "UDP 41989 · zpráva před $age\\n" +
                 "Přijaté titulky: ${p.pocetTitulku} · z ${p.posledniIP.ifEmpty { "—" }}\\n" +
                 "Překryv: $overlays$hidden"
@@ -136,7 +153,39 @@ def main() -> None:
     once(activity,
          '                if (prijem.uroven == UrovenSpojeni.OK && !bylPripojen) moveTaskToBack(true)\n',
          '                // Keep this diagnostic waiting screen visible even after first packet.\n')
-    print("PlayCaption iPhone TV receiver patch ready: separate APK; original PlayCaption untouched.")
+    # This TEST has ONE user-facing mode: S mobilem (iPhone).
+    # Keep original unmodified modules compiled for compatibility, but bypass
+    # all Xbox login, PS5, RemotePlay, language selection and beta menu.
+    once(activity,
+         '        prevezmiAccountId(intent)\n        ukazUvod()\n',
+         '        // This independent APK acts only as an iPhone subtitle receiver.\n'
+         '        if (Settings.canDrawOverlays(this)) hratSTelefonem()\n'
+         '        else ukazNavodPovoleni()\n')
+    once(activity,
+         '        if (obrazovka == "hlavni") ukazHlavni()\n',
+         '        if (Settings.canDrawOverlays(this) && obrazovka != "prijem") {\n'
+         '            hratSTelefonem()\n'
+         '        }\n')
+    once(activity,
+         '            "prijem" -> zpetNaVyber()\n',
+         '            "prijem" -> { PrijemService.zastav(this); finish() }\n')
+    once(activity,
+         '        val zpet = tlacitko(t("prijemZpetKratce"), 20f) { zpetNaVyber() }.apply {\n',
+         '        val zpet = tlacitko("Zastavit příjem", 20f) {\n'
+         '            PrijemService.zastav(this); finish()\n'
+         '        }.apply {\n')
+    # Display the actual current address. iOS auto-discovery does not require pairing.
+    once(activity,
+         '        sloupec.addView(text("iPhone + Xbox · diagnostický přijímač", 22f, Color.WHITE, tucne = true)\n',
+         '        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager\n'
+         '        val ipTv = cm.activeNetwork?.let { cm.getLinkProperties(it) }\n'
+         '            ?.linkAddresses?.firstOrNull { it.address is java.net.Inet4Address }\n'
+         '            ?.address?.hostAddress ?: "Zjisti IP v nastavení TV"\n'
+         '        sloupec.addView(text("IP televize: $ipTv", 25f, Color.parseColor("#46D9F6"), tucne = true)\n'
+         '            .apply { gravity = Gravity.CENTER }, odsazeni(top = 12))\n'
+         '        sloupec.addView(text("iPhone + Xbox · diagnostický přijímač", 22f, Color.WHITE, tucne = true)\n')
+
+    print("PlayCaption iPhone-only TV receiver patch ready: separate APK; original PlayCaption untouched.")
 
 
 if __name__ == "__main__":
