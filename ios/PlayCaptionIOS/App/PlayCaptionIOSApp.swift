@@ -775,25 +775,29 @@ struct TVSelectionView: View {
                     }
                     .font(.caption)
                     .tint(.secondary)
-                } else {
-                    Text("Na naší testovací TV aplikaci zvol „Spárovat iPhone“ a sem zadej šestimístný kód. Nejde o přihlášení k Xboxu.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 10) {
-                        TextField("6místný kód z TV", text: $tv.receiverCode)
-                            .keyboardType(.numberPad)
-                            .textContentType(.oneTimeCode)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: tv.receiverCode) { _, newValue in
-                                tv.receiverCode = String(newValue.filter { $0.isNumber }.prefix(6))
-                            }
-                        Button("Spárovat") {
-                            tv.pairReceiver()
+                }
+                // Re-pairing must remain available even if an old token survives
+                // reinstalling the independent TV APK in the iPhone Keychain.
+                // A new six-digit PIN safely replaces only this TV's saved token.
+                Text(tv.receiverPaired && !tv.receiverConnected
+                     ? "Po přeinstalaci TV aplikace klepni na TV na „Spárovat iPhone“ a zadej nový šestimístný kód. Staré spárování se přepíše."
+                     : "Na TV zvol „Spárovat iPhone“ a zadej aktuální šestimístný kód. Nejde o přihlášení k Xboxu.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    TextField("6místný kód z TV", text: $tv.receiverCode)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: tv.receiverCode) { _, newValue in
+                            tv.receiverCode = String(newValue.filter { $0.isNumber }.prefix(6))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .disabled(chosenIP.isEmpty || tv.receiverCode.count != 6)
+                    Button(tv.receiverPaired ? "Spárovat znovu" : "Spárovat") {
+                        tv.pairReceiver()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(chosenIP.isEmpty || tv.receiverCode.count != 6)
                 }
                 Text(tv.receiverStatus)
                     .font(.caption)
