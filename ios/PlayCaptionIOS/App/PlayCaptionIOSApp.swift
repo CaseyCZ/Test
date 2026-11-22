@@ -688,21 +688,62 @@ struct TVSelectionView: View {
             }
 
             Divider()
-            Label("Pro titulky z Xboxu není párovací kód potřeba.",
-                  systemImage: "info.circle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Párování iPhonu s televizí", systemImage: "link")
+                    .font(.subheadline.bold())
+                if tv.receiverPaired {
+                    Label(tv.receiverConnected
+                          ? "Spárováno · připojeno k TV"
+                          : "Spárováno · spojení zatím nepotvrzeno",
+                          systemImage: tv.receiverConnected
+                          ? "checkmark.circle.fill" : "clock")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(tv.receiverConnected ? .green : .orange)
+                    Button("Zrušit uložené párování") {
+                        tv.forgetReceiver()
+                    }
+                    .font(.caption)
+                    .tint(.secondary)
+                } else {
+                    Text("Na naší testovací TV aplikaci zvol „Spárovat iPhone“ a sem zadej šestimístný kód. Nejde o přihlášení k Xboxu.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        TextField("6místný kód z TV", text: $tv.receiverCode)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: tv.receiverCode) { _, newValue in
+                                tv.receiverCode = String(newValue.filter { $0.isNumber }.prefix(6))
+                            }
+                        Button("Spárovat") {
+                            tv.pairReceiver()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .disabled(chosenIP.isEmpty || tv.receiverCode.count != 6)
+                    }
+                }
+                Text(tv.receiverStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(13)
+            .background(Color.white.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 13))
 
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: chosenIP.isEmpty
-                      ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                Image(systemName: tv.receiverConnected
+                      ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(chosenIP.isEmpty ? .orange : .green)
+                    .foregroundStyle(tv.receiverConnected ? .green : .orange)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(chosenIP.isEmpty
-                         ? "Nejdříve vyber televizi" : "iPhone je připraven odesílat titulky")
+                    Text(tv.receiverConnected
+                         ? "Televize potvrdila spojení"
+                         : "Příjem titulků na TV zatím nepotvrzen")
                         .font(.subheadline.bold())
-                    Text("Na televizi zapni režim „S telefonem“.")
+                    Text("Na TV použij režim „S mobilem“ a potom testovací titulek.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
