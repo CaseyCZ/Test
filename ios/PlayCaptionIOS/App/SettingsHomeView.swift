@@ -138,6 +138,11 @@ private struct PlayCaptionOCRSettingsView: View {
 
             Section("Rozpoznávání textu") {
                 Toggle("Filtrovat herní menu", isOn: $model.filterMenuText)
+                Toggle("Rozlišovat dialogy od nápisů na autech",
+                       isOn: $model.dialogueGuardEnabled)
+                Text("Ověří text na více snímcích a ignoruje nápisy, které se pohybují společně se scénou. Přidá malé zpoždění a může přeskočit velmi krátký dialog. Pokud ti některý titulek chybí, filtr vypni.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 Toggle("Rozšířit oblast při nenalezení textu",
                        isOn: $model.expandOnEmpty)
                     .disabled(model.ocrMode == .classic || model.manualOCR)
@@ -158,6 +163,7 @@ private struct PlayCaptionOCRSettingsView: View {
                     model.ocrMode = .classic
                     model.expandOnEmpty = false
                     model.filterMenuText = true
+                    model.dialogueGuardEnabled = true
                 }
                 .disabled(model.isRunning)
             }
@@ -407,6 +413,7 @@ struct GameSubtitleProfile: Codable, Identifiable {
     var manualOCRLocked: Bool
     var manualOCRBox: CGRect
     var filterMenuText: Bool
+    var dialogueGuardEnabled: Bool?
     var ocrMode: String
     var expandOnEmpty: Bool
     var outputX: Double
