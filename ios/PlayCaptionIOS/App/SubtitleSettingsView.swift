@@ -26,9 +26,26 @@ struct SubtitleSettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Stejně jako na Androidu můžeš upravit modrou oblast anglických dialogů, zelenou polohu českých titulků a samostatný žlutý rámeček pro volby či texty ve hře.")
+                    Text("Zvol oblast, kterou chceš upravit, a posuň ji v náhledu televize. Každá oblast má vlastní nastavení.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Modrá – odkud číst dialogy", systemImage: "square.dashed")
+                            .foregroundStyle(.blue)
+                        Label("Zelená – kam zobrazit české dialogy", systemImage: "square.dashed")
+                            .foregroundStyle(.green)
+                        Label("Žlutá – odkud číst volby / herní text", systemImage: "square.dashed")
+                            .foregroundStyle(.yellow)
+                        Label("Oranžová – vlastní poloha překladu voleb (zatím nepodporováno)",
+                              systemImage: "lock")
+                            .foregroundStyle(.orange.opacity(0.85))
+                    }
+                    .font(.caption)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.055),
+                                in: RoundedRectangle(cornerRadius: 12))
 
                     Picker("Co upravovat", selection: $editing) {
                         Text("Modrý · Čtení").tag(Area.reading)
@@ -265,6 +282,9 @@ struct SubtitleSettingsView: View {
                                                width: 0.40, height: 0.35)
                     showOnTV()
                 }.font(.subheadline)
+                Text("Překlad těchto voleb původní PlayCaption na TV automaticky umisťuje vedle žluté oblasti. Samostatný oranžový rámeček pro výstup nyní TV přijímač nepodporuje.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("Experimentální režim: iPhone už umí číst a posílat volby nebo text do původního PlayCaption. Zatím ale neurčuje, která možnost je ve hře zvýrazněná; to doplníme po testu.")
                     .font(.caption).foregroundStyle(.orange)
             } else {
