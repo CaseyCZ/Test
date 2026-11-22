@@ -7,6 +7,7 @@ on:
       - feature/tcl835-iphone-tv-bridge-20261122
       - feature/tcl835-orange-tv-v2
       - fix/tcl835-orange-position-v3
+      - fix/tcl835-pairing-udp-diagnostics-v5
     paths:
       - ".github/workflows/build-tcl-iphone-tv.yml"
       - "tools/patch_tv_iphone.py"
@@ -58,7 +59,7 @@ jobs:
           grep -q "maximalniVyska" upstream/app/src/main/java/cz/titulky/tv/OverlayService.kt
           grep -q "textMax" upstream/app/src/main/java/cz/titulky/tv/OverlayService.kt
           grep -q "vystup\[4\]" upstream/app/src/main/java/cz/titulky/tv/OverlayService.kt
-          grep -q "ORANGE V4" upstream/app/src/main/java/cz/titulky/tv/MainActivity.kt
+          grep -q "ORANGE V5" upstream/app/src/main/java/cz/titulky/tv/MainActivity.kt
           grep -q "IPhoneTVPairing.verify" upstream/app/src/main/java/cz/titulky/tv/Propojeni.kt
       - name: Compatible Gradle wrapper
         run: |
@@ -76,13 +77,13 @@ jobs:
           APK=$(find upstream/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)
           test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep "package: name='cz.titulky.tv.iphonebridge'"
-          cp "$APK" "PlayCaption-TCL-C835-Orange-v4-Font-TEST.apk"
+          cp "$APK" "PlayCaption-TCL-C835-Orange-v5-Pair-Diag-TEST.apk"
       - name: Upload standalone TV APK
         uses: actions/upload-artifact@v4
         with:
-          name: PlayCaption-TCL-C835-Orange-v4-Font-TEST
+          name: PlayCaption-TCL-C835-Orange-v5-Pair-Diag-TEST
           path: |
-            PlayCaption-TCL-C835-Orange-v4-Font-TEST.apk
+            PlayCaption-TCL-C835-Orange-v5-Pair-Diag-TEST.apk
             kit/tools/patch_tv_iphone.py
           if-no-files-found: error
           retention-days: 30
