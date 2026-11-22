@@ -98,7 +98,9 @@ final class CaptionAppModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(choicesEnabled, forKey: "choicesEnabled")
             Task { await pipeline.resetOptions() }
-            if !choicesEnabled { tv.sendChoices([], area: choicesArea) }
+            if !choicesEnabled {
+                tv.sendChoices([], area: choicesArea, outputArea: choicesOutputArea)
+            }
         }
     }
     @Published var choicesTextMode = UserDefaults.standard.bool(forKey: "choicesTextMode") {
@@ -123,6 +125,28 @@ final class CaptionAppModel: ObservableObject {
             }
         }
     }
+    /// Output rectangle for text recognized in the yellow region.
+    /// This is independent of the green ordinary-dialogue output.
+    @Published var choicesOutputArea: CGRect = {
+        let fallback = CGRect(x: 0.18, y: 0.76, width: 0.64, height: 0.16)
+        guard let data = UserDefaults.standard.data(forKey: "choicesOutputArea"),
+              let rect = try? JSONDecoder().decode(CGRect.self, from: data),
+              rect.width >= 0.10, rect.height >= 0.05,
+              rect.minX >= 0, rect.minY >= 0,
+              rect.maxX <= 1, rect.maxY <= 1
+        else { return fallback }
+        return rect
+    }() {
+        didSet {
+            if let data = try? JSONEncoder().encode(choicesOutputArea) {
+                UserDefaults.standard.set(data, forKey: "choicesOutputArea")
+            }
+        }
+    }
+    @Published var choicesOutputLocked = UserDefaults.standard.bool(forKey: "choicesOutputLocked") {
+        didSet { UserDefaults.standard.set(choicesOutputLocked, forKey: "choicesOutputLocked") }
+    }
+
     @Published var lastChoices = ""
     @Published var logLines: [String] = []
     @Published var gameProfiles: [GameSubtitleProfile] = {
@@ -182,6 +206,8 @@ final class CaptionAppModel: ObservableObject {
             choicesTextMode: choicesTextMode,
             choicesArea: choicesArea,
             choicesLocked: choicesLocked,
+            choicesOutputArea: choicesOutputArea,
+            choicesOutputLocked: choicesOutputLocked,
             subtitleDuration: subtitleDuration,
             skipOldTranslations: skipOldTranslations,
             maxTranslationAge: maxTranslationAge
@@ -212,6 +238,8 @@ final class CaptionAppModel: ObservableObject {
         choicesTextMode = profile.choicesTextMode
         choicesLocked = profile.choicesLocked
         choicesEnabled = profile.choicesEnabled
+        if let rect = profile.choicesOutputArea { choicesOutputArea = rect }
+        if let locked = profile.choicesOutputLocked { choicesOutputLocked = locked }
         subtitleDuration = profile.subtitleDuration
         skipOldTranslations = profile.skipOldTranslations
         maxTranslationAge = profile.maxTranslationAge
@@ -271,7 +299,8 @@ final class CaptionAppModel: ObservableObject {
                               self.choicesArea == area,
                               self.choicesTextMode == asText else { return }
                         self.lastChoices = translated.joined(separator: " · ")
-                        self.tv.sendChoices(translated, area: area, asText: asText)
+                        self.tv.sendChoices(translated, area: area, asText: asText,
+                                            outputArea: self.choicesOutputArea)
                         self.write("Volby: \(translated.count) rozpoznaných položek")
                     }
                 }
@@ -331,7 +360,7 @@ final class CaptionAppModel: ObservableObject {
         isRunning = false
         UIApplication.shared.isIdleTimerDisabled = false
         tv.sendSubtitle("", duration: 0)
-        tv.sendChoices([], area: choicesArea)
+        tv.sendChoices([], area: choicesArea, outputArea: choicesOutputArea)
         lastChoices = ""
         status = "Zastaveno"
     }
