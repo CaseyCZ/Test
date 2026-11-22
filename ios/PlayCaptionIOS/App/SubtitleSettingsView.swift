@@ -270,7 +270,6 @@ struct SubtitleSettingsView: View {
                     Text("Text (dopisy, SMS)").tag(true)
                 }
                 .pickerStyle(.segmented)
-                gameTextFontControl
                 Toggle("Zamknout žlutý rámeček", isOn: $model.choicesLocked)
                 if !model.choicesLocked {
                     Text("Šířka: \(Int(model.choicesArea.width * 100)) %")
@@ -354,8 +353,8 @@ struct SubtitleSettingsView: View {
         }
     }
 
-    /// Both yellow input and orange output panels expose the same independent
-    /// text scale because this controls the Czech rendering, not OCR glyphs.
+    /// Only the orange output panel controls Czech text size.
+    /// The yellow rectangle is OCR input only.
     private var gameTextFontControl: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Velikost písma českého překladu: \(Int(model.choicesOutputFont * 100)) %")
