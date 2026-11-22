@@ -153,8 +153,9 @@ actor CaptionPipeline {
                 emptyReads += 1
                 // A repeated greeting must be eligible again after it disappears.
                 if !lastText.isEmpty && now.timeIntervalSince(lastSeen) > 1.0 {
+                    // Allow the same phrase again without invalidating a
+                    // translation still in flight for the last visible line.
                     lastText = ""
-                    revision += 1
                 }
                 return nil
             }
