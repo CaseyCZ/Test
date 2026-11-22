@@ -39,6 +39,11 @@ def main() -> None:
          '<string name="app_name">PlayCaption</string>',
          '<string name="app_name">PlayCaption iPhone TV TEST</string>')
 
+    # Dedicated pairing manager, separate from original PCS1 Xbox-account transfer.
+    pairing_source = pathlib.Path(__file__).with_name("IPhoneTVPairing.kt")
+    (root / "app/src/main/java/cz/titulky/tv/IPhoneTVPairing.kt").write_text(
+        pairing_source.read_text(encoding="utf-8"), encoding="utf-8")
+
     networking = root / "app/src/main/java/cz/titulky/tv/Propojeni.kt"
     once(networking,
          '        @Volatile var posledniZprava = 0L\n            private set',
@@ -57,6 +62,49 @@ def main() -> None:
          '                        posledniIP = p.address.hostAddress ?: ""\n'
          '                        posledniCisloTitulku = cislo\n'
          '                        val doba =')
+    # In the single listening socket, recognize PIN pairing, signed heartbeats
+    # and signed subtitles. Legacy unsigned PCT1 is retained temporarily for the
+    # user's already-installed IPA 0.2.0, with explicit diagnostics.
+    once(networking,
+         '                        val casti = String(p.data, 0, p.length, Charsets.UTF_8).split("\\t")\n'
+         '                        if (pribeh.zpracuj(p)) {\n',
+         '                        var casti = String(p.data, 0, p.length, Charsets.UTF_8).split("\\t")\n'
+         '                        if (casti.size >= 2 && casti[0] == "PCPAIR1") {\n'
+         '                            when (casti[1]) {\n'
+         '                                "PAIR" -> {\n'
+         '                                    val code = casti.getOrNull(2).orEmpty()\n'
+         '                                    val id = casti.getOrNull(3).orEmpty()\n'
+         '                                    val secret = IPhoneTVPairing.confirm(c, code, id)\n'
+         '                                    if (secret != null)\n'
+         '                                        odpovez(s, p, "PCPAIR1\\tOK\\t$id\\t$secret")\n'
+         '                                    else odpovez(s, p, "PCPAIR1\\tERROR\\tKód je nesprávný nebo vypršel")\n'
+         '                                }\n'
+         '                                "PING" -> {\n'
+         '                                    val id = casti.getOrNull(2).orEmpty()\n'
+         '                                    val nonce = casti.getOrNull(3).orEmpty()\n'
+         '                                    val sig = casti.getOrNull(4).orEmpty()\n'
+         '                                    if (IPhoneTVPairing.verify(c, id, "PING\\t$id\\t$nonce", sig)) {\n'
+         '                                        posledniZprava = System.currentTimeMillis()\n'
+         '                                        odpovez(s, p, "PCPAIR1\\tPONG\\t$nonce")\n'
+         '                                    }\n'
+         '                                }\n'
+         '                                "TEXT" -> {\n'
+         '                                    val id = casti.getOrNull(2).orEmpty()\n'
+         '                                    val encoded = casti.getOrNull(3).orEmpty()\n'
+         '                                    val sig = casti.getOrNull(4).orEmpty()\n'
+         '                                    if (encoded.length < 11000 &&\n'
+         '                                        IPhoneTVPairing.verify(c, id, "TEXT\\t$id\\t$encoded", sig)) {\n'
+         '                                        val decoded = runCatching {\n'
+         '                                            String(android.util.Base64.decode(encoded, android.util.Base64.DEFAULT), Charsets.UTF_8)\n'
+         '                                        }.getOrNull() ?: continue\n'
+         '                                        if (!decoded.startsWith("PCT1\\t")) continue\n'
+         '                                        casti = decoded.split("\\t")\n'
+         '                                    } else continue\n'
+         '                                }\n'
+         '                            }\n'
+         '                            if (casti.getOrNull(0) == "PCPAIR1") continue\n'
+         '                        }\n'
+         '                        if (pribeh.zpracuj(p)) {\n')
     # Acknowledges the UDP receiver only. No false "displayed" claim.
     # Official sender layout starts at field 5. Older PlayCaption iOS builds
     # accidentally include a second tab before X, moving those coordinates to 6.
@@ -187,7 +235,37 @@ def main() -> None:
          '            .apply { gravity = Gravity.CENTER }, odsazeni(top = 12))\n'
          '        sloupec.addView(text("iPhone + Xbox · diagnostický přijímač", 22f, Color.WHITE, tucne = true)\n')
 
-    print("PlayCaption iPhone-only TV receiver patch ready: separate APK; original PlayCaption untouched.")
+    # Pairing controls on the TV (no Microsoft, Xbox, PS5 credentials).
+    once(activity,
+         '        val prijemDiag = text("UDP 41989: čekám na první zprávu", 18f, Color.WHITE)\n',
+         '''        val pairingStatus = text("iPhone není spárovaný", 22f, Color.WHITE)
+            .apply { gravity = Gravity.CENTER }
+        sloupec.addView(pairingStatus, odsazeni(top = 14, bottom = 8))
+        var shownCode: String? = null
+        sloupec.addView(tlacitko("🔗 Spárovat iPhone", 20f) {
+            shownCode = IPhoneTVPairing.startCode()
+            pairingStatus.text = "Párovací kód: $shownCode (3 minuty)"
+        }, odsazeni(top = 6, bottom = 8))
+        sloupec.addView(tlacitko("Zrušit spárování", 16f) {
+            IPhoneTVPairing.clear(this)
+            shownCode = null
+            pairingStatus.text = "iPhone není spárovaný"
+        }, odsazeni(top = 4, bottom = 8))
+        val prijemDiag = text("UDP 41989: čekám na první zprávu", 18f, Color.WHITE)
+''')
+    once(activity,
+         '                prijemDiag.text = PrijemService.statistikaPrijmu()\n',
+         '                prijemDiag.text = PrijemService.statistikaPrijmu()\n'
+         '                pairingStatus.text = when {\n'
+         '                    IPhoneTVPairing.connectedRecently() -> "✔ iPhone spárován a připojen"\n'
+         '                    shownCode != null && IPhoneTVPairing.remainingSeconds() > 0 ->\n'
+         '                        "Párovací kód: $shownCode · zbývá \${IPhoneTVPairing.remainingSeconds()} s"\n'
+         '                    IPhoneTVPairing.paired(this@MainActivity) -> "iPhone spárován · čekám na připojení"\n'
+         '                    else -> "iPhone není spárovaný"\n'
+         '                }\n'
+         '                if (IPhoneTVPairing.remainingSeconds() == 0) shownCode = null\n')
+    print("PlayCaption iPhone-only TV receiver + six-digit device pairing ready.")
+
 
 
 if __name__ == "__main__":
