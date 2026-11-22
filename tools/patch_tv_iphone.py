@@ -245,7 +245,7 @@ def main() -> None:
          '            ?.address?.hostAddress ?: "Zjisti IP v nastavení TV"\n'
          '        sloupec.addView(text("IP televize: $ipTv", 25f, Color.parseColor("#46D9F6"), tucne = true)\n'
          '            .apply { gravity = Gravity.CENTER }, odsazeni(top = 12))\n'
-         '        sloupec.addView(text("iPhone + Xbox · diagnostický přijímač", 22f, Color.WHITE, tucne = true)\n')
+         '        sloupec.addView(text("PlayCaption iPhone · ORANGE V4 · iOS 0.3.2", 22f, Color.WHITE, tucne = true)\n')
 
     # Pairing controls on the TV (no Microsoft, Xbox, PS5 credentials).
     once(activity,
@@ -284,10 +284,12 @@ def main() -> None:
     once(networking,
          '                                priVolbach?.invoke(seznam, casti[7].toIntOrNull() ?: -1, oblast, casti[2].toIntOrNull() ?: 0)\n',
          '                                val vystup = if (casti.size >= 13) runCatching {\n'
+         '                                    val font = casti.getOrNull(13)?.toFloatOrNull()\n'
+         '                                        ?.takeIf { it.isFinite() && it in 0.6f..2.0f } ?: 1f\n'
          '                                    floatArrayOf(casti[9].toFloat(), casti[10].toFloat(),\n'
-         '                                        casti[11].toFloat(), casti[12].toFloat())\n'
+         '                                        casti[11].toFloat(), casti[12].toFloat(), font)\n'
          '                                }.getOrNull()?.takeIf { r ->\n'
-         '                                    r.all { it.isFinite() && it in 0f..1f } &&\n'
+         '                                    r.take(4).all { it.isFinite() && it in 0f..1f } &&\n'
          '                                    r[2] > r[0] + 0.1f && r[3] > r[1] + 0.05f\n'
          '                                } else null\n'
          '                                priVolbach?.invoke(seznam, casti[7].toIntOrNull() ?: -1,\n'
@@ -338,12 +340,21 @@ def main() -> None:
          '        lp.y = (o[1] * h).toInt()\n'
          '        okno("volby") { wm.updateViewLayout(seznam, lp) }\n',
          '        lp.y = (o[1] * h).toInt()\n'
-         '        if (vystup != null && vystup.size == 4 &&\n'
-         '            vystup.all { it.isFinite() && it in 0f..1f } &&\n'
+         '        if (vystup != null && vystup.size == 5 &&\n'
+         '            vystup.take(4).all { it.isFinite() && it in 0f..1f } &&\n'
+         '            vystup[4].isFinite() && vystup[4] in 0.6f..2f &&\n'
          '            vystup[2] > vystup[0] + 0.1f && vystup[3] > vystup[1] + 0.05f) {\n'
          '            val sirkaVystupu = ((vystup[2] - vystup[0]) * w).toInt().coerceAtLeast(80)\n'
          '            lp.gravity = Gravity.TOP or Gravity.START\n'
          '            lp.width = sirkaVystupu\n'
+         '            // Fit text within the orange area, not the legacy 42% max width.\n'
+         '            val textMax = (sirkaVystupu - (44 * d).toInt()).coerceAtLeast(40)\n'
+         '            for (index in 0 until seznam.childCount) {\n'
+         '                (seznam.getChildAt(index) as? TextView)?.apply {\n'
+         '                    maxWidth = textMax\n'
+         '                    textSize = VELIKOST_PISMA * 0.9f * vystup[4]\n'
+         '                }\n'
+         '            }\n'
          '            // Height is the maximum bounds set by the orange rectangle.\n'
          '            // Keep wrap-to-text style, but never paint a huge empty black box.\n'
          '            val maximalniVyska = ((vystup[3] - vystup[1]) * h).toInt().coerceAtLeast(48)\n'
@@ -352,7 +363,7 @@ def main() -> None:
          '                android.view.View.MeasureSpec.makeMeasureSpec(maximalniVyska, android.view.View.MeasureSpec.AT_MOST))\n'
          '            lp.height = seznam.measuredHeight.coerceIn(1, maximalniVyska)\n'
          '            lp.x = (vystup[0] * w).toInt().coerceIn(0, (w - sirkaVystupu).toInt().coerceAtLeast(0))\n'
-         '            lp.y = (vystup[1] * h).toInt().coerceIn(0, h.toInt())\n'
+         '            lp.y = (vystup[1] * h).toInt().coerceIn(0, (h.toInt() - lp.height).coerceAtLeast(0))\n'
          '        }\n'
          '        okno("volby") { wm.updateViewLayout(seznam, lp) }\n')
     print("iPhone TV PCV1 output geometry enabled: yellow OCR and orange output independent.")
