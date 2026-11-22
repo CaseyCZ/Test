@@ -99,6 +99,8 @@ final class CaptionAppModel: ObservableObject {
             UserDefaults.standard.set(choicesEnabled, forKey: "choicesEnabled")
             Task { await pipeline.resetOptions() }
             if !choicesEnabled {
+                lastTranslatedChoiceItems = []
+                lastChoicesSentAt = nil
                 tv.sendChoices([], area: choicesArea, outputArea: choicesOutputArea)
             }
         }
@@ -143,6 +145,14 @@ final class CaptionAppModel: ObservableObject {
             }
         }
     }
+    /// Independent font scale for Czech translations of the yellow game-text area.
+    /// Normal dialogue subtitles continue using outputFont.
+    @Published var choicesOutputFont: Double = {
+        let saved = UserDefaults.standard.object(forKey: "choicesOutputFont") as? Double ?? 1.0
+        return saved.isFinite && (0.6...2.0).contains(saved) ? saved : 1.0
+    }() {
+        didSet { UserDefaults.standard.set(choicesOutputFont, forKey: "choicesOutputFont") }
+    }
     @Published var choicesOutputLocked = UserDefaults.standard.bool(forKey: "choicesOutputLocked") {
         didSet { UserDefaults.standard.set(choicesOutputLocked, forKey: "choicesOutputLocked") }
     }
@@ -169,6 +179,11 @@ final class CaptionAppModel: ObservableObject {
     private var processingChoices = false
     private var processingOCR = false
     private var sessionRevision = 0
+    // Cache only the translation already visible on TV. Moving the orange
+    // rectangle must not trigger a fresh OCR/translation or show demo text.
+    private var lastTranslatedChoiceItems: [String] = []
+    private var lastTranslatedChoiceIsText = false
+    private var lastChoicesSentAt: Date?
 
     init() {
         tv.onPairingData = { [weak self] fields in
@@ -208,6 +223,7 @@ final class CaptionAppModel: ObservableObject {
             choicesLocked: choicesLocked,
             choicesOutputArea: choicesOutputArea,
             choicesOutputLocked: choicesOutputLocked,
+            choicesOutputFont: choicesOutputFont,
             subtitleDuration: subtitleDuration,
             skipOldTranslations: skipOldTranslations,
             maxTranslationAge: maxTranslationAge
@@ -240,6 +256,7 @@ final class CaptionAppModel: ObservableObject {
         choicesEnabled = profile.choicesEnabled
         if let rect = profile.choicesOutputArea { choicesOutputArea = rect }
         if let locked = profile.choicesOutputLocked { choicesOutputLocked = locked }
+        choicesOutputFont = profile.choicesOutputFont ?? 1.0
         subtitleDuration = profile.subtitleDuration
         skipOldTranslations = profile.skipOldTranslations
         maxTranslationAge = profile.maxTranslationAge
@@ -257,6 +274,8 @@ final class CaptionAppModel: ObservableObject {
         sessionRevision += 1
         let currentSession = sessionRevision
         processingOCR = false
+        lastTranslatedChoiceItems = []
+        lastChoicesSentAt = nil
         Task { await pipeline.resetDialogue() }
         UIApplication.shared.isIdleTimerDisabled = true
         status = "Navazuji Xbox Remote Play…"
@@ -299,8 +318,12 @@ final class CaptionAppModel: ObservableObject {
                               self.choicesArea == area,
                               self.choicesTextMode == asText else { return }
                         self.lastChoices = translated.joined(separator: " · ")
+                        self.lastTranslatedChoiceItems = translated
+                        self.lastTranslatedChoiceIsText = asText
+                        self.lastChoicesSentAt = Date()
                         self.tv.sendChoices(translated, area: area, asText: asText,
-                                            outputArea: self.choicesOutputArea)
+                                            outputArea: self.choicesOutputArea,
+                                            outputFont: self.choicesOutputFont)
                         self.write("Volby: \(translated.count) rozpoznaných položek")
                     }
                 }
@@ -352,6 +375,22 @@ final class CaptionAppModel: ObservableObject {
         }
     }
 
+    /// Move the already-translated game text without altering the current OCR
+    /// input, starting another translation or placing a sample over the game.
+    @discardableResult
+    func relocateActiveChoices() -> Bool {
+        guard isRunning, choicesEnabled,
+              !lastTranslatedChoiceItems.isEmpty,
+              let sentAt = lastChoicesSentAt,
+              Date().timeIntervalSince(sentAt) <= (lastTranslatedChoiceIsText ? 300 : 45)
+        else { return false }
+        tv.sendChoices(lastTranslatedChoiceItems, area: choicesArea,
+                       asText: lastTranslatedChoiceIsText,
+                       outputArea: choicesOutputArea,
+                       outputFont: choicesOutputFont)
+        return true
+    }
+
     func stop() {
         sessionRevision += 1
         processingOCR = false
@@ -361,6 +400,8 @@ final class CaptionAppModel: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         tv.sendSubtitle("", duration: 0)
         tv.sendChoices([], area: choicesArea, outputArea: choicesOutputArea)
+        lastTranslatedChoiceItems = []
+        lastChoicesSentAt = nil
         lastChoices = ""
         status = "Zastaveno"
     }

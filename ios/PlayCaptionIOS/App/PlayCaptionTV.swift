@@ -502,7 +502,8 @@ final class PlayCaptionTV: ObservableObject {
     func sendChoices(_ items: [String], area: CGRect,
                      asText: Bool = false,
                      showFrame: Bool = false,
-                     outputArea: CGRect? = nil) {
+                     outputArea: CGRect? = nil,
+                     outputFont: Double = 1.0) {
         let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { return }
         let escaped = items.joined(separator: "\n")
@@ -511,11 +512,12 @@ final class PlayCaptionTV: ObservableObject {
             .replacingOccurrences(of: "\n", with: "\\n")
         let frameFlag = showFrame ? 1 : 0
         let chosen = asText ? -2 : -1
-        // PCV1 extension: four optional screen-normalized output coordinates.
+        // PCV1 extension: output rectangle and independent game-text font scale.
         // Older PlayCaption receivers ignore additional fields safely.
         let outputSuffix: String
         if let rect = outputArea {
-            outputSuffix = "\t\(rect.minX)\t\(rect.minY)\t\(rect.maxX)\t\(rect.maxY)"
+            let scale = outputFont.isFinite ? min(2.0, max(0.6, outputFont)) : 1.0
+            outputSuffix = "\t\(rect.minX)\t\(rect.minY)\t\(rect.maxX)\t\(rect.maxY)\t\(scale)"
         } else {
             outputSuffix = ""
         }

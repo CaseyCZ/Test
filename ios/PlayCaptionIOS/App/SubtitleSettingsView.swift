@@ -180,6 +180,7 @@ struct SubtitleSettingsView: View {
             rect.origin.x = max(0, min(1 - rect.width, x - rect.width / 2))
             rect.origin.y = max(0, min(1 - rect.height, y - rect.height / 2))
             model.choicesOutputArea = rect
+            scheduleOrangeRelocation()
         }
     }
 
@@ -285,7 +286,8 @@ struct SubtitleSettingsView: View {
                 Button("Ukázat žlutý rámeček na TCL") {
                     model.tv.sendChoices([], area: model.choicesArea,
                                          asText: model.choicesTextMode, showFrame: true,
-                                         outputArea: model.choicesOutputArea)
+                                         outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
                 }
                 .buttonStyle(.bordered)
                 .tint(.yellow)
@@ -332,6 +334,7 @@ struct SubtitleSettingsView: View {
                         set: { updateChoicesOutputSize(width: nil, height: CGFloat($0)) }
                     ), in: 0.08...0.40)
                 }
+                gameTextFontControl
                 Button("Ukázat oranžový překlad na TCL") {
                     showOnTV()
                 }
@@ -350,6 +353,25 @@ struct SubtitleSettingsView: View {
         }
     }
 
+    /// Only the orange output panel controls Czech text size.
+    /// The yellow rectangle is OCR input only.
+    private var gameTextFontControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Velikost písma českého překladu: \(Int(model.choicesOutputFont * 100)) %")
+            Slider(value: Binding(
+                get: { model.choicesOutputFont },
+                set: { newValue in
+                    model.choicesOutputFont = newValue
+                    scheduleOrangeRelocation()
+                }
+            ), in: 0.60...2.00, step: 0.05)
+                .tint(.orange)
+            Text("Mění jen překlad herních textů a voleb. Klasické titulky zůstávají beze změny.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private func updateChoicesOutputSize(width: CGFloat?, height: CGFloat?) {
         var area = model.choicesOutputArea
         let center = CGPoint(x: area.midX, y: area.midY)
@@ -358,6 +380,7 @@ struct SubtitleSettingsView: View {
         area.origin.x = max(0, min(1 - area.width, center.x - area.width / 2))
         area.origin.y = max(0, min(1 - area.height, center.y - area.height / 2))
         model.choicesOutputArea = area
+        scheduleOrangeRelocation()
     }
 
     private func updateChoicesSize(width: CGFloat?, height: CGFloat?) {
@@ -380,6 +403,18 @@ struct SubtitleSettingsView: View {
         model.manualOCRBox = area
     }
 
+    // Debounce drag/slider changes while a game is running. When a game text
+    // is already visible, move that same translation instead of showing a demo.
+    private func scheduleOrangeRelocation() {
+        guard model.isRunning else { return }
+        orangePreviewTask?.cancel()
+        orangePreviewTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            model.relocateActiveChoices()
+        }
+    }
+
     private func showOnTV() {
         if editing == .reading {
             guard model.manualOCR else { return }
@@ -390,22 +425,29 @@ struct SubtitleSettingsView: View {
             guard model.choicesEnabled else { return }
             model.tv.sendChoices([], area: model.choicesArea,
                                  asText: model.choicesTextMode, showFrame: true,
-                                 outputArea: model.choicesOutputArea)
+                                 outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
         } else {
             guard model.choicesEnabled else { return }
-            // During a game, don't overwrite the current translated text.
-            // Subsequent game text will automatically use the new rectangle.
-            guard !model.isRunning else { return }
+            // During a game, resend only the current real translation at its
+            // new coordinates. The sample is reserved for idle preview mode.
+            if model.isRunning {
+                orangePreviewTask?.cancel()
+                model.relocateActiveChoices()
+                return
+            }
             orangePreviewTask?.cancel()
             model.tv.sendChoices(["Ukázka českého překladu"],
                                  area: model.choicesArea, asText: true,
-                                 showFrame: false, outputArea: model.choicesOutputArea)
+                                 showFrame: false, outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
             orangePreviewTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(6))
                 guard !Task.isCancelled, !model.isRunning else { return }
                 model.tv.sendChoices([], area: model.choicesArea,
                                      asText: model.choicesTextMode,
-                                     outputArea: model.choicesOutputArea)
+                                     outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
             }
         }
     }

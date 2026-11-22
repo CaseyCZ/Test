@@ -421,6 +421,8 @@ struct GameSubtitleProfile: Codable, Identifiable {
     /// Optional to preserve previously saved 0.2.0 game profiles.
     var choicesOutputArea: CGRect?
     var choicesOutputLocked: Bool?
+    /// Optional for backward-compatible 0.3.2 saved game profiles.
+    var choicesOutputFont: Double?
     var subtitleDuration: Double
     var skipOldTranslations: Bool
     var maxTranslationAge: Double
