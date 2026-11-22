@@ -219,45 +219,107 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 17) {
+                VStack(spacing: 16) {
                     header
-                    GroupBox("1 · Televize PlayCaption") {
+
+                    PlayCaptionSection(title: "1 · Televize", symbol: "tv",
+                                       subtitle: "Zde se zobrazují české titulky.") {
                         TVSelectionView(tv: model.tv)
                     }
-                    GroupBox("2 · Microsoft / Xbox") {
+                    PlayCaptionSection(title: "2 · Microsoft / Xbox", symbol: "gamecontroller.fill",
+                                       subtitle: "Účet pro vzdálené hraní.") {
                         XboxAccountView(auth: model.xbox)
                     }
-                    GroupBox("3 · Vzdálené hraní") {
+                    PlayCaptionSection(title: "3 · Vzdálené hraní", symbol: "dot.radiowaves.left.and.right",
+                                       subtitle: "Vyber Xbox a spusť překlad.") {
                         XboxRemotePlayView(auth: model.xbox)
                     }
-                    GroupBox("Diagnostika") {
-                        VStack(alignment: .leading) {
+
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: 10) {
                             ScrollView {
                                 Text(model.logLines.suffix(40).joined(separator: "\n"))
                                     .font(.caption2.monospaced())
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                            }.frame(height: 160)
+                            }
+                            .frame(height: 150)
                             ShareLink(item: model.shareLogs()) {
-                                Label("Sdílet anonymizovaný log", systemImage: "square.and.arrow.up")
+                                Label("Sdílet diagnostiku", systemImage: "square.and.arrow.up")
                             }
                             Text("Log nezahrnuje přihlašovací tokeny ani kódy.")
-                                .font(.caption2).foregroundStyle(.secondary)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
+                        .padding(.top, 10)
+                    } label: {
+                        Label("Diagnostika", systemImage: "waveform.path.ecg")
+                            .font(.headline)
                     }
-                }.padding()
+                    .tint(.secondary)
+                    .padding(16)
+                    .background(Color.white.opacity(0.055),
+                                in: RoundedRectangle(cornerRadius: 20))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
+            .background(Color.black.ignoresSafeArea())
             .navigationTitle("PlayCaption iOS")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     private var header: some View {
-        VStack(spacing: 5) {
-            Image(systemName: "gamecontroller.fill").font(.system(size: 37)).foregroundStyle(.red)
-            Text("PlayCaption").font(.largeTitle.bold())
+        VStack(spacing: 6) {
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(.red)
+                .padding(.top, 12)
+            Text("PlayCaption")
+                .font(.system(size: 32, weight: .bold, design: .rounded))
             Text("Xbox → české titulky → Google TV")
-                .font(.subheadline).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity).padding(.vertical, 9)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct PlayCaptionSection<Content: View>: View {
+    let title: String
+    let symbol: String
+    let subtitle: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(.blue)
+                    .frame(width: 43, height: 43)
+                    .background(Color.blue.opacity(0.15),
+                                in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.title3.bold())
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.white.opacity(0.065),
+                    in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20)
+            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
     }
 }
 
@@ -307,14 +369,28 @@ struct XboxRemotePlayView: View {
                     }
                 }
             } label: {
-                HStack {
-                    Label(selectedConsole?.name ?? "Vyber Xbox", systemImage: "gamecontroller.fill")
+                HStack(spacing: 12) {
+                    Image(systemName: "gamecontroller.fill")
+                        .font(.title3)
+                        .foregroundStyle(.blue)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(selectedConsole?.name ?? "Vyber Xbox")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text(selectedConsole?.powerState ?? "Zvol konzoli pro překlad")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
+                        .foregroundStyle(.blue)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(12)
-                .background(.gray.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
+                .padding(14)
+                .background(Color.white.opacity(0.075),
+                            in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.white.opacity(0.13), lineWidth: 1))
             }
             .disabled(auth.consoles.isEmpty || model.isRunning)
 
@@ -378,45 +454,185 @@ struct XboxRemotePlayView: View {
 struct TVSelectionView: View {
     @ObservedObject var tv: PlayCaptionTV
     @State private var test = "Ahoj! PlayCaption z iPhonu funguje."
+    @State private var showDevices = false
+    @State private var editIP = false
+    @State private var editTest = false
+
+    private var chosenIP: String {
+        tv.ip.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var chosenDevice: PlayCaptionDevice? {
+        tv.discovered.first(where: { $0.ip == chosenIP })
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                TextField("IP televize (např. 192.168.1.20)", text: $tv.ip)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.numbersAndPunctuation)
-                    .autocorrectionDisabled()
-                Button("Najít") { tv.discover() }.buttonStyle(.bordered)
+        VStack(alignment: .leading, spacing: 12) {
+            if chosenIP.isEmpty {
+                Label("Zatím není vybraná televize", systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.orange)
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: 14))
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "tv.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                        .frame(width: 46, height: 46)
+                        .background(Color.blue.opacity(0.18),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(chosenDevice?.name ?? "Vybraná televize")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(chosenIP)
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 2)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                        .accessibilityLabel("Vybraná televize")
+                }
+                .padding(13)
+                .background(Color.blue.opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: 15))
+                .overlay(RoundedRectangle(cornerRadius: 15)
+                    .strokeBorder(Color.blue.opacity(0.7), lineWidth: 1.5))
             }
-            if !tv.discovered.isEmpty {
-                ForEach(tv.discovered) { device in
-                    Button { tv.ip = device.ip } label: {
-                        Label("\(device.name) · \(device.ip)", systemImage: "tv")
+
+            HStack(spacing: 8) {
+                Button {
+                    showDevices = true
+                    tv.discover()
+                } label: {
+                    Label("Vyhledat televize", systemImage: "magnifyingglass")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    showDevices = true
+                    editIP = true
+                    tv.discover()
+                } label: {
+                    Label("Změnit", systemImage: "arrow.left.arrow.right")
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
+            }
+
+            if showDevices {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Televize v síti")
+                        .font(.subheadline.bold())
+                    if tv.discovered.isEmpty {
+                        Text("Zatím žádná nalezená televize. Můžeš zadat IP ručně.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(tv.discovered) { device in
+                        Button {
+                            tv.ip = device.ip
+                            showDevices = false
+                            editIP = false
+                        } label: {
+                            HStack {
+                                Image(systemName: "tv")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(device.name).font(.subheadline.bold())
+                                    Text(device.ip)
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if chosenIP == device.ip {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(Color.white.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button(editIP ? "Skrýt ruční zadání" : "Zadat IP televize ručně") {
+                        editIP.toggle()
+                    }
+                    .font(.subheadline)
+                    if editIP {
+                        TextField("IP televize (např. 192.168.1.20)", text: $tv.ip)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.numbersAndPunctuation)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+                            .submitLabel(.done)
+                            .onSubmit { showDevices = false; editIP = false }
+                        Button("Hotovo") {
+                            showDevices = false
+                            editIP = false
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
                     }
                 }
+                .padding(12)
+                .background(Color.white.opacity(0.045),
+                            in: RoundedRectangle(cornerRadius: 13))
             }
+
             Divider()
-            Text("Volitelné párování / převzetí Xbox účtu z TV")
-                .font(.subheadline.bold())
-            Button("1 · Vyžádat párovací kód na TV") { tv.requestPairing() }
-                .buttonStyle(.bordered)
-            HStack {
-                TextField("Čtyřmístný kód z televize", text: $tv.pairingCode)
-                    .keyboardType(.numberPad)
-                Button("2 · Spárovat") { tv.confirmPairing() }
-                    .buttonStyle(.borderedProminent)
-            }
-            Text(tv.pairingStatus)
+            Label("Pro titulky z Xboxu není párovací kód potřeba.",
+                  systemImage: "info.circle")
                 .font(.caption)
-                .foregroundStyle(tv.isPaired ? .green : .secondary)
-            Divider()
-            TextField("Zkušební titulek", text: $test)
-            Button("Odeslat zkušební titulek") {
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: chosenIP.isEmpty
+                      ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(chosenIP.isEmpty ? .orange : .green)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(chosenIP.isEmpty
+                         ? "Nejdříve vyber televizi" : "iPhone je připraven odesílat titulky")
+                        .font(.subheadline.bold())
+                    Text("Na televizi zapni režim „S telefonem“.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button {
                 tv.sendSubtitle(test, duration: 8_000, preview: true)
-            }.buttonStyle(.borderedProminent).tint(.red)
-            Text("Zkušební titulek se zobrazí i v menu Google TV (režim úpravy polohy).")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(tv.message).font(.caption).foregroundStyle(.secondary)
+            } label: {
+                Label("Odeslat zkušební titulek", systemImage: "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(chosenIP.isEmpty)
+
+            DisclosureGroup("Upravit text zkušebního titulku", isExpanded: $editTest) {
+                TextField("Zkušební titulek", text: $test)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.top, 6)
+            }
+            .font(.caption)
+            .tint(.secondary)
+
+            Text(tv.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -433,13 +649,16 @@ private struct MicrosoftSignInSafari: UIViewControllerRepresentable {
 struct XboxAccountView: View {
     @ObservedObject var auth: XboxAuthorization
     @State private var showMicrosoftBrowser = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if !auth.signedIn {
                 if auth.currentCode == nil {
                     Button("Přihlásit Microsoft účet") {
                         Task { await auth.beginLogin() }
-                    }.buttonStyle(.borderedProminent).tint(.red)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
                 }
                 if let code = auth.currentCode {
                     Text("Na stránce Microsoftu zadej tento kód:")
@@ -449,24 +668,51 @@ struct XboxAccountView: View {
                     HStack {
                         Button("Kopírovat kód") {
                             UIPasteboard.general.string = code.userCode
-                        }.buttonStyle(.bordered)
+                        }
+                        .buttonStyle(.bordered)
                         Button("Otevřít Microsoft") {
                             showMicrosoftBrowser = true
-                        }.buttonStyle(.borderedProminent).tint(.red)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
                     }
                     Text("Po přihlášení zavři prohlížeč tlačítkem Hotovo. Aplikace bude pokračovat se stejným kódem.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Znovu ověřit přihlášení") { auth.resumeLoginIfNeeded() }
                         .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Znovu ověřit přihlášení") {
+                        auth.resumeLoginIfNeeded()
+                    }
+                    .font(.caption)
                 }
             } else {
-                Text("Účet přihlášen").foregroundStyle(.green)
-                HStack {
-                    Button("Načíst moje konzole") { Task { await auth.refreshConsoles() } }
-                    Button("Odhlásit") { auth.signOut() }.foregroundStyle(.red)
+                Label("Účet přihlášen", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color.green.opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 12))
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await auth.refreshConsoles() }
+                    } label: {
+                        Label("Načíst moje konzole", systemImage: "gamecontroller")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+
+                    Button {
+                        auth.signOut()
+                    } label: {
+                        Label("Odhlásit", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                 }
             }
-            Text(auth.status).font(.caption).foregroundStyle(.secondary)
+            Text(auth.status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(isPresented: $showMicrosoftBrowser, onDismiss: {
