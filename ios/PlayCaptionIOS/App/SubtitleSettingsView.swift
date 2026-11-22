@@ -6,6 +6,7 @@ struct SubtitleSettingsView: View {
     @ObservedObject var model: CaptionAppModel
     @Environment(\.dismiss) private var dismiss
     @State private var editing: Area = .reading
+    @State private var orangePreviewTask: Task<Void, Never>?
 
     private enum Area: String, CaseIterable {
         case reading = "Čtení"
@@ -73,6 +74,7 @@ struct SubtitleSettingsView: View {
                 }
                 .padding(16)
             }
+            .onDisappear { orangePreviewTask?.cancel() }
             .navigationTitle("Oblasti titulků")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -336,8 +338,8 @@ struct SubtitleSettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 Button("Obnovit výchozí polohu") {
-                    model.choicesOutputArea = CGRect(x: 0.18, y: 0.76,
-                                                     width: 0.64, height: 0.16)
+                    model.choicesOutputArea = CGRect(x: 0.07, y: 0.43,
+                                                     width: 0.43, height: 0.17)
                     showOnTV()
                 }
                 .font(.subheadline)
@@ -391,9 +393,20 @@ struct SubtitleSettingsView: View {
                                  outputArea: model.choicesOutputArea)
         } else {
             guard model.choicesEnabled else { return }
+            // During a game, don't overwrite the current translated text.
+            // Subsequent game text will automatically use the new rectangle.
+            guard !model.isRunning else { return }
+            orangePreviewTask?.cancel()
             model.tv.sendChoices(["Ukázka českého překladu"],
                                  area: model.choicesArea, asText: true,
                                  showFrame: false, outputArea: model.choicesOutputArea)
+            orangePreviewTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled, !model.isRunning else { return }
+                model.tv.sendChoices([], area: model.choicesArea,
+                                     asText: model.choicesTextMode,
+                                     outputArea: model.choicesOutputArea)
+            }
         }
     }
 }
