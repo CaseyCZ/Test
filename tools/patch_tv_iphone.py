@@ -276,6 +276,80 @@ def main() -> None:
          '                    else -> "iPhone není spárovaný"\n'
          '                }\n'
          '                if (IPhoneTVPairing.remainingSeconds() == 0) shownCode = null\n')
+    # PCV1 optional output rectangle: left, top, right, bottom (0..1).
+    # Legacy PCV1 still behaves like the original receiver if fields are absent.
+    once(networking,
+         '        private val priVolbach: ((List<String>, Int, FloatArray, Int) -> Unit)? = null,\n',
+         '        private val priVolbach: ((List<String>, Int, FloatArray, Int, FloatArray?) -> Unit)? = null,\n')
+    once(networking,
+         '                                priVolbach?.invoke(seznam, casti[7].toIntOrNull() ?: -1, oblast, casti[2].toIntOrNull() ?: 0)\n',
+         '                                val vystup = if (casti.size >= 13) runCatching {\n'
+         '                                    floatArrayOf(casti[9].toFloat(), casti[10].toFloat(),\n'
+         '                                        casti[11].toFloat(), casti[12].toFloat())\n'
+         '                                }.getOrNull()?.takeIf { r ->\n'
+         '                                    r.all { it.isFinite() && it in 0f..1f } &&\n'
+         '                                    r[2] > r[0] + 0.1f && r[3] > r[1] + 0.05f\n'
+         '                                } else null\n'
+         '                                priVolbach?.invoke(seznam, casti[7].toIntOrNull() ?: -1,\n'
+         '                                    oblast, casti[2].toIntOrNull() ?: 0, vystup)\n')
+    once(networking,
+         '                                        if (!decoded.startsWith("PCT1\\t")) continue\n',
+         '                                        if (!decoded.startsWith("PCT1\\t") &&\n'
+         '                                            !decoded.startsWith("PCV1\\t")) continue\n')
+
+    once(service,
+         '                priVolbach = { volby, vybrana, oblast, ramecek -> ui.post { zobrazVolby(volby, vybrana, oblast, ramecek) } },\n',
+         '                priVolbach = { volby, vybrana, oblast, ramecek, vystup ->\n'
+         '                    ui.post { zobrazVolby(volby, vybrana, oblast, ramecek, vystup) }\n'
+         '                },\n')
+    once(service,
+         '    private fun zobrazVolby(volby: List<String>, vybrana: Int, oblast: FloatArray, ramecek: Int) {\n',
+         '    private fun zobrazVolby(volby: List<String>, vybrana: Int, oblast: FloatArray,\n'
+         '                            ramecek: Int, vystup: FloatArray?) {\n')
+    once(service,
+         '            .putExtra(OverlayService.EXTRA_OBLAST, oblast)\n'
+         '            .putExtra(OverlayService.EXTRA_RAMECEK, ramecek > 0)\n',
+         '            .putExtra(OverlayService.EXTRA_OBLAST, oblast)\n'
+         '            .apply { if (vystup != null)\n'
+         '                putExtra(OverlayService.EXTRA_VYSTUP_VOLEB, vystup) }\n'
+         '            .putExtra(OverlayService.EXTRA_RAMECEK, ramecek > 0)\n')
+
+    overlay = root / "app/src/main/java/cz/titulky/tv/OverlayService.kt"
+    once(overlay,
+         '    private fun ukazVolby(volby: Array<String>, vybrana: Int, oblast: FloatArray?, ramecek: Boolean, trvale: Boolean = false) {\n',
+         '    private fun ukazVolby(volby: Array<String>, vybrana: Int, oblast: FloatArray?, ramecek: Boolean,\n'
+         '                           trvale: Boolean = false, vystup: FloatArray? = null) {\n')
+    once(overlay,
+         '                intent.getFloatArrayExtra(EXTRA_OBLAST),\n'
+         '                intent.getBooleanExtra(EXTRA_RAMECEK, false),\n'
+         '                intent.getBooleanExtra(EXTRA_RAMECEK_TRVALE, false))\n',
+         '                intent.getFloatArrayExtra(EXTRA_OBLAST),\n'
+         '                intent.getBooleanExtra(EXTRA_RAMECEK, false),\n'
+         '                intent.getBooleanExtra(EXTRA_RAMECEK_TRVALE, false),\n'
+         '                intent.getFloatArrayExtra(EXTRA_VYSTUP_VOLEB))\n')
+    # Only our TV build gets the new extra. Do not modify external upstream.
+    once(overlay,
+         '        const val ACTION_SET_NAPOVEDA = "cz.titulky.tv.SET_NAPOVEDA"\n',
+         '        const val EXTRA_VYSTUP_VOLEB = "vystup_voleb"\n'
+         '        const val ACTION_SET_NAPOVEDA = "cz.titulky.tv.SET_NAPOVEDA"\n')
+    # Explicit output geometry takes priority over automatic "next to OCR"
+    # placement. Fallback remains exactly the original behavior.
+    once(overlay,
+         '        lp.y = (o[1] * h).toInt()\n'
+         '        okno("volby") { wm.updateViewLayout(seznam, lp) }\n',
+         '        lp.y = (o[1] * h).toInt()\n'
+         '        if (vystup != null && vystup.size == 4 &&\n'
+         '            vystup.all { it.isFinite() && it in 0f..1f } &&\n'
+         '            vystup[2] > vystup[0] + 0.1f && vystup[3] > vystup[1] + 0.05f) {\n'
+         '            val sirkaVystupu = ((vystup[2] - vystup[0]) * w).toInt().coerceAtLeast(80)\n'
+         '            lp.gravity = Gravity.TOP or Gravity.START\n'
+         '            lp.width = sirkaVystupu\n'
+         '            lp.height = WindowManager.LayoutParams.WRAP_CONTENT\n'
+         '            lp.x = (vystup[0] * w).toInt().coerceIn(0, (w - sirkaVystupu).toInt().coerceAtLeast(0))\n'
+         '            lp.y = (vystup[1] * h).toInt().coerceIn(0, h.toInt())\n'
+         '        }\n'
+         '        okno("volby") { wm.updateViewLayout(seznam, lp) }\n')
+    print("iPhone TV PCV1 output geometry enabled: yellow OCR and orange output independent.")
     print("PlayCaption iPhone-only TV receiver + six-digit device pairing ready.")
 
 
