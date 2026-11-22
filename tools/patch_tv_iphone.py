@@ -52,6 +52,11 @@ def main() -> None:
          '        @Volatile var pocetTitulku = 0L\n            private set\n'
          '        @Volatile var posledniIP = ""\n            private set\n'
          '        @Volatile var posledniCisloTitulku = -1L\n            private set')
+    # Pairing receipt/result diagnostics (no PIN or secret logged).
+    once(networking,
+         '        @Volatile var posledniCisloTitulku = -1L\n            private set',
+         '        @Volatile var posledniCisloTitulku = -1L\n            private set\n'
+         '        @Volatile var posledniParovaciStav = "žádný požadavek"\n            private set')
     # Prevent two installed applications from silently sharing the same UDP port.
     # If original PlayCaption is still receiving, this receiver fails visibly.
     once(networking, '                        reuseAddress = true\n                        soTimeout = 1000',
@@ -70,11 +75,17 @@ def main() -> None:
          '                        if (pribeh.zpracuj(p)) {\n',
          '                        var casti = String(p.data, 0, p.length, Charsets.UTF_8).split("\\t")\n'
          '                        if (casti.size >= 2 && casti[0] == "PCPAIR1") {\n'
+         '                            if (casti[1] == "PAIR") {\n'
+         '                                posledniParovaciStav = "požadavek dorazil na TV"\n'
+         '                                posledniZprava = System.currentTimeMillis()\n'
+         '                            }\n'
          '                            when (casti[1]) {\n'
          '                                "PAIR" -> {\n'
          '                                    val code = casti.getOrNull(2).orEmpty()\n'
          '                                    val id = casti.getOrNull(3).orEmpty()\n'
          '                                    val secret = IPhoneTVPairing.confirm(c, code, id)\n'
+         '                                    posledniParovaciStav = if (secret != null)\n'
+         '                                        "kód přijat; odpověď OK odeslána" else "kód odmítnut nebo vypršel"\n'
          '                                    if (secret != null)\n'
          '                                        odpovez(s, p, "PCPAIR1\\tOK\\t$id\\t$secret")\n'
          '                                    else odpovez(s, p, "PCPAIR1\\tERROR\\tKód je nesprávný nebo vypršel")\n'
@@ -151,6 +162,7 @@ def main() -> None:
             val overlays = if (OverlayService.pripravena) "připraven" else "nepřipraven"
             val hidden = if (sluzba.skrytyMimoVstup) " / mimo TV vstup" else ""
             return "UDP 41989 · zpráva před $age\\n" +
+                "Párování: ${p.posledniParovaciStav}\\n" +
                 "Přijaté titulky: ${p.pocetTitulku} · z ${p.posledniIP.ifEmpty { "—" }}\\n" +
                 "Překryv: $overlays$hidden"
         }
@@ -245,7 +257,7 @@ def main() -> None:
          '            ?.address?.hostAddress ?: "Zjisti IP v nastavení TV"\n'
          '        sloupec.addView(text("IP televize: $ipTv", 25f, Color.parseColor("#46D9F6"), tucne = true)\n'
          '            .apply { gravity = Gravity.CENTER }, odsazeni(top = 12))\n'
-         '        sloupec.addView(text("PlayCaption iPhone · ORANGE V4 · iOS 0.3.2", 22f, Color.WHITE, tucne = true)\n')
+         '        sloupec.addView(text("PlayCaption iPhone · ORANGE V5 · iOS 0.3.2", 22f, Color.WHITE, tucne = true)\n')
 
     # Pairing controls on the TV (no Microsoft, Xbox, PS5 credentials).
     once(activity,
@@ -271,7 +283,7 @@ def main() -> None:
          '                pairingStatus.text = when {\n'
          '                    IPhoneTVPairing.connectedRecently() -> "✔ iPhone spárován a připojen"\n'
          '                    shownCode != null && IPhoneTVPairing.remainingSeconds() > 0 ->\n'
-         '                        "Párovací kód: $shownCode · zbývá \${IPhoneTVPairing.remainingSeconds()} s"\n'
+         '                        "Párovací kód: $shownCode · zbývá ${IPhoneTVPairing.remainingSeconds()} s"\n'
          '                    IPhoneTVPairing.paired(this@MainActivity) -> "iPhone spárován · čekám na připojení"\n'
          '                    else -> "iPhone není spárovaný"\n'
          '                }\n'
