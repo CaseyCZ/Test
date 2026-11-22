@@ -1,0 +1,80 @@
+name: PlayCaption TCL C835 · iPhone TV TEST APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/tcl835-iphone-tv-bridge-20261122
+    paths:
+      - ".github/workflows/build-tcl-iphone-tv.yml"
+      - "tools/patch_tv_iphone.py"
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout own test kit
+        uses: actions/checkout@v4
+        with:
+          path: kit
+          persist-credentials: false
+      - name: Checkout pinned original PlayCaption 0.22 (read only)
+        uses: actions/checkout@v4
+        with:
+          repository: AdamRuzick4/PlayCaption-app
+          ref: 633a847400b6c4bac1e7f034463e7847a53a9590
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+      - name: Apply test-only iPhone compatibility patch
+        run: |
+          python -m py_compile kit/tools/patch_tv_iphone.py
+          python kit/tools/patch_tv_iphone.py upstream
+          grep -q "PCA1" upstream/app/src/main/java/cz/titulky/tv/Propojeni.kt
+          grep -q "statistikaPrijmu" upstream/app/src/main/java/cz/titulky/tv/PrijemService.kt
+          grep -q "Test překryvu TV" upstream/app/src/main/java/cz/titulky/tv/MainActivity.kt
+      - name: Compatible Gradle wrapper
+        run: |
+          sed -i 's@gradle-9\.6\.0-bin\.zip@gradle-8.7-bin.zip@' upstream/gradle/wrapper/gradle-wrapper.properties
+          grep -q "gradle-8.7-bin.zip" upstream/gradle/wrapper/gradle-wrapper.properties
+      - name: Build TV APK
+        working-directory: upstream
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Validate independent install identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find upstream/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep "package: name='cz.titulky.tv.iphonebridge'"
+          cp "$APK" "PlayCaption-TCL-C835-iPhone-TV-TEST.apk"
+      - name: Upload standalone TV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayCaption-TCL-C835-iPhone-TV-TEST
+          path: |
+            PlayCaption-TCL-C835-iPhone-TV-TEST.apk
+            kit/tools/patch_tv_iphone.py
+          if-no-files-found: error
+          retention-days: 30
