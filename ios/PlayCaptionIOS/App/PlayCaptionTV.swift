@@ -247,6 +247,7 @@ final class PlayCaptionTV: ObservableObject {
         }
         pairingRequest?.cancel()
         receiverStatus = "Ověřuji kód na televizi…"
+        let pairingClientID = receiverID
         let conn = NWConnection(host: .init(target), port: .init(integerLiteral: 41989), using: .udp)
         pairingRequest = conn
         conn.stateUpdateHandler = { [weak self, weak conn] state in
@@ -263,7 +264,7 @@ final class PlayCaptionTV: ObservableObject {
                         }
                         let fields = text.components(separatedBy: "\t")
                         if fields.count == 4, fields[0] == "PCPAIR1",
-                           fields[1] == "OK", fields[2] == self.receiverID,
+                           fields[1] == "OK", fields[2] == pairingClientID,
                            fields[3].count == 64,
                            fields[3].allSatisfy({ $0.isHexDigit }),
                            ReceiverSecretStore.save(fields[3], ip: target) {
@@ -278,7 +279,7 @@ final class PlayCaptionTV: ObservableObject {
                         conn.cancel()
                     }
                 }
-                conn.send(content: Data("PCPAIR1\tPAIR\t\(code)\t\(self.receiverID)".utf8),
+                conn.send(content: Data("PCPAIR1\tPAIR\t\(code)\t\(pairingClientID)".utf8),
                           completion: .contentProcessed { [weak self] error in
                     if let error {
                         Task { @MainActor in
