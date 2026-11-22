@@ -6,6 +6,7 @@ on:
       - feature/playcaption-ios
       - feature/playcaption-ios-settings-v02
       - feature/playcaption-ios-tv-pairing-v03
+      - fix/playcaption-ios-v031-original-tv-style
     paths:
       - "ios/PlayCaptionIOS/**"
       - ".github/workflows/build-playcaption-ios.yml"
@@ -56,13 +57,13 @@ jobs:
           mkdir -p "$PWD/.build/ipa/Payload"
           cp -R "$APP" "$PWD/.build/ipa/Payload/"
           cd "$PWD/.build/ipa"
-          zip -qry "$GITHUB_WORKSPACE/PlayCaptionIOS-v0.3.0-TVPairing-unsigned.ipa" Payload
-          unzip -t "$GITHUB_WORKSPACE/PlayCaptionIOS-v0.3.0-TVPairing-unsigned.ipa" >/dev/null
+          zip -qry "$GITHUB_WORKSPACE/PlayCaptionIOS-v0.3.1-OriginalTVPlacement-unsigned.ipa" Payload
+          unzip -t "$GITHUB_WORKSPACE/PlayCaptionIOS-v0.3.1-OriginalTVPlacement-unsigned.ipa" >/dev/null
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PlayCaptionIOS-v0.3.0-TVPairing-unsigned
-          path: PlayCaptionIOS-v0.3.0-TVPairing-unsigned.ipa
+          name: PlayCaptionIOS-v0.3.1-OriginalTVPlacement-unsigned
+          path: PlayCaptionIOS-v0.3.1-OriginalTVPlacement-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
       - name: Upload build log on failure
