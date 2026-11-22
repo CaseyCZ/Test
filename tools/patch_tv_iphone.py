@@ -157,6 +157,14 @@ def main() -> None:
 
 ''' + before
     once(service, before, after)
+    # In this dedicated receiver, captions must also work over TCL's HDMI input.
+    # The upstream foreground-app detection may misclassify HDMI as non-TV.
+    once(service,
+         '        val vstup = uprava || runCatching { popredi.jeVstupTv() }.getOrDefault(true)\n',
+         '        val vstup = true // iPhone-only TV receiver; show captions on HDMI\n')
+    once(service,
+         '        val vstup = ramecek > 0 || runCatching { popredi.jeVstupTv() }.getOrDefault(true)\n',
+         '        val vstup = true // iPhone-only TV receiver; show choices on HDMI\n')
 
     activity = root / "app/src/main/java/cz/titulky/tv/MainActivity.kt"
     text = activity.read_text(encoding="utf-8")
@@ -174,6 +182,10 @@ def main() -> None:
     text = text[:begin] + slim + text[end:]
     activity.write_text(text, encoding="utf-8")
 
+    once(activity,
+         '        sloupec.addView(text(t("prijemSam"), 16f, TEXT2).apply { gravity = Gravity.CENTER }, odsazeni(top = 16))\n',
+         '        sloupec.addView(text("Přepni na HDMI Xboxu. Titulky z iPhonu zůstanou viditelné.", 16f, TEXT2)\n'
+         '            .apply { gravity = Gravity.CENTER }, odsazeni(top = 16))\n')
     once(activity,
          '        val zpet = tlacitko(t("prijemZpetKratce"), 20f)',
          '''        val prijemDiag = text("UDP 41989: čekám na první zprávu", 18f, Color.WHITE)
