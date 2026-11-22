@@ -74,6 +74,7 @@ final class PlayCaptionTV: ObservableObject {
         return value
     }()
     private var pairingRequest: NWConnection?
+    private var pairingTimeoutTask: Task<Void, Never>?
     private var liveReceiver: NWConnection?
     private var receiverHeartbeatTask: Task<Void, Never>?
     private var liveReceiverReady = false
@@ -246,17 +247,30 @@ final class PlayCaptionTV: ObservableObject {
             return
         }
         pairingRequest?.cancel()
+        pairingTimeoutTask?.cancel()
         receiverStatus = "Ověřuji kód na televizi…"
         let pairingClientID = receiverID
         let conn = NWConnection(host: .init(target), port: .init(integerLiteral: 41989), using: .udp)
         pairingRequest = conn
+        // UDP does not report a missing reply as a connection failure.
+        // Always end a stalled request with actionable feedback.
+        pairingTimeoutTask = Task { [weak self, weak conn] in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, let self, let conn,
+                  self.pairingRequest === conn else { return }
+            self.receiverStatus = "TV neodpověděla do 10 s. Zkontroluj IP TV, povolení Místní síť a příjem UDP 41989 na TV."
+            self.pairingRequest = nil
+            conn.cancel()
+        }
         conn.stateUpdateHandler = { [weak self, weak conn] state in
             guard let conn else { return }
             switch state {
             case .ready:
                 conn.receiveMessage { [weak self] data, _, _, error in
                     Task { @MainActor in
-                        guard let self else { return }
+                        guard let self, self.pairingRequest === conn else { return }
+                        self.pairingTimeoutTask?.cancel()
+                        self.pairingRequest = nil
                         guard let data, let text = String(data: data, encoding: .utf8) else {
                             self.receiverStatus = "TV neodpověděla. Ověř režim S mobilem, IP a síť."
                             conn.cancel()
@@ -272,7 +286,7 @@ final class PlayCaptionTV: ObservableObject {
                             self.receiverStatus = "iPhone úspěšně spárován. Ověřuji spojení…"
                             self.startReceiverHeartbeat()
                         } else if fields.first == "PCPAIR1", fields.dropFirst().first == "ERROR" {
-                            self.receiverStatus = "Párování selhalo: zkontroluj kód na TV."
+                            self.receiverStatus = "TV odmítla kód. Vytvoř na TV nový šestimístný kód a zadej ho znovu."
                         } else {
                             self.receiverStatus = "TV vrátila neplatnou odpověď."
                         }
@@ -289,7 +303,10 @@ final class PlayCaptionTV: ObservableObject {
                 })
             case .failed(let error):
                 Task { @MainActor in
-                    self?.receiverStatus = "Spojení s TV selhalo: \(error.localizedDescription)"
+                    guard let self, self.pairingRequest === conn else { return }
+                    self.pairingTimeoutTask?.cancel()
+                    self.pairingRequest = nil
+                    self.receiverStatus = "Spojení s TV selhalo: \(error.localizedDescription)"
                 }
                 conn.cancel()
             default: break
@@ -299,6 +316,9 @@ final class PlayCaptionTV: ObservableObject {
     }
 
     func forgetReceiver() {
+        pairingTimeoutTask?.cancel()
+        pairingRequest?.cancel()
+        pairingRequest = nil
         ReceiverSecretStore.remove(ip.trimmingCharacters(in: .whitespacesAndNewlines))
         receiverCode = ""
         receiverStatus = "Párování na iPhonu zrušeno."
