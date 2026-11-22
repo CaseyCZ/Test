@@ -2,6 +2,51 @@ import Foundation
 import Network
 import Combine
 
+import CryptoKit
+import Security
+
+private enum ReceiverSecretStore {
+    static func account(_ ip: String) -> String { "iphone-tv-" + ip }
+
+    static func load(_ ip: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "cz.caseycz.playcaption.tvpairing",
+            kSecAttrAccount as String: account(ip),
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var value: CFTypeRef?
+        let code = SecItemCopyMatching(query as CFDictionary, &value)
+        guard code == errSecSuccess, let data = value as? Data,
+              let token = String(data: data, encoding: .utf8) else { return nil }
+        return token
+    }
+
+    static func save(_ token: String, ip: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "cz.caseycz.playcaption.tvpairing",
+            kSecAttrAccount as String: account(ip)
+        ]
+        SecItemDelete(query as CFDictionary)
+        var item = query
+        item[kSecValueData as String] = Data(token.utf8)
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    static func remove(_ ip: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "cz.caseycz.playcaption.tvpairing",
+            kSecAttrAccount as String: account(ip)
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+
 struct PlayCaptionDevice: Identifiable, Hashable {
     var id: String
     var name: String
@@ -10,7 +55,34 @@ struct PlayCaptionDevice: Identifiable, Hashable {
 
 @MainActor
 final class PlayCaptionTV: ObservableObject {
-    @Published var ip: String = UserDefaults.standard.string(forKey: "tvIP") ?? ""
+    @Published var ip: String = UserDefaults.standard.string(forKey: "tvIP") ?? "" {
+        didSet {
+            UserDefaults.standard.set(ip, forKey: "tvIP")
+            if oldValue != ip { startReceiverHeartbeat() }
+        }
+    }
+    @Published var receiverCode = ""
+    @Published private(set) var receiverStatus = "Televize zatím není spárovaná s iPhonem."
+    @Published private(set) var receiverConnected = false
+    @Published private(set) var lastCaptionAcknowledgement = ""
+
+    private let receiverID: String = {
+        let defaults = UserDefaults.standard
+        if let value = defaults.string(forKey: "receiverPhoneID") { return value }
+        let value = UUID().uuidString
+        defaults.set(value, forKey: "receiverPhoneID")
+        return value
+    }()
+    private var pairingRequest: NWConnection?
+    private var liveReceiver: NWConnection?
+    private var receiverHeartbeatTask: Task<Void, Never>?
+    private var liveReceiverReady = false
+    private var liveReceiverTarget = ""
+    private var lastPong: Date?
+
+    var receiverPaired: Bool {
+        ReceiverSecretStore.load(ip.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+    }
     @Published var discovered: [PlayCaptionDevice] = []
     @Published var pairingCode = ""
     @Published private(set) var pairedIP = UserDefaults.standard.string(forKey: "pairedTVIP") ?? ""
@@ -22,6 +94,10 @@ final class PlayCaptionTV: ObservableObject {
     var onPairingData: (([String]) -> Void)?
     @Published var message = "Vyber „S telefonem“ v PlayCaption na televizi."
     private let queue = DispatchQueue(label: "cz.caseycz.playcaption.udp")
+
+    init() {
+        startReceiverHeartbeat()
+    }
     private var listener: NWListener?
     private var pairingConnection: NWConnection?
     private var repeatTask: Task<Void, Never>?
@@ -160,6 +236,201 @@ final class PlayCaptionTV: ObservableObject {
         }
     }
 
+    // TV pairing is separate from Xbox / Microsoft account sign-in.
+    // The PIN is displayed only on our independent TV receiver app.
+    func pairReceiver() {
+        let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = receiverCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty, code.count == 6, code.allSatisfy(\.isNumber) else {
+            receiverStatus = "Zadej šest číslic z obrazovky TV."
+            return
+        }
+        pairingRequest?.cancel()
+        receiverStatus = "Ověřuji kód na televizi…"
+        let pairingClientID = receiverID
+        let conn = NWConnection(host: .init(target), port: .init(integerLiteral: 41989), using: .udp)
+        pairingRequest = conn
+        conn.stateUpdateHandler = { [weak self, weak conn] state in
+            guard let conn else { return }
+            switch state {
+            case .ready:
+                conn.receiveMessage { [weak self] data, _, _, error in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        guard let data, let text = String(data: data, encoding: .utf8) else {
+                            self.receiverStatus = "TV neodpověděla. Ověř režim S mobilem, IP a síť."
+                            conn.cancel()
+                            return
+                        }
+                        let fields = text.components(separatedBy: "\t")
+                        if fields.count == 4, fields[0] == "PCPAIR1",
+                           fields[1] == "OK", fields[2] == pairingClientID,
+                           fields[3].count == 64,
+                           fields[3].allSatisfy({ $0.isHexDigit }),
+                           ReceiverSecretStore.save(fields[3], ip: target) {
+                            self.receiverCode = ""
+                            self.receiverStatus = "iPhone úspěšně spárován. Ověřuji spojení…"
+                            self.startReceiverHeartbeat()
+                        } else if fields.first == "PCPAIR1", fields.dropFirst().first == "ERROR" {
+                            self.receiverStatus = "Párování selhalo: zkontroluj kód na TV."
+                        } else {
+                            self.receiverStatus = "TV vrátila neplatnou odpověď."
+                        }
+                        conn.cancel()
+                    }
+                }
+                conn.send(content: Data("PCPAIR1\tPAIR\t\(code)\t\(pairingClientID)".utf8),
+                          completion: .contentProcessed { [weak self] error in
+                    if let error {
+                        Task { @MainActor in
+                            self?.receiverStatus = "Párování nebylo odesláno: \(error.localizedDescription)"
+                        }
+                    }
+                })
+            case .failed(let error):
+                Task { @MainActor in
+                    self?.receiverStatus = "Spojení s TV selhalo: \(error.localizedDescription)"
+                }
+                conn.cancel()
+            default: break
+            }
+        }
+        conn.start(queue: queue)
+    }
+
+    func forgetReceiver() {
+        ReceiverSecretStore.remove(ip.trimmingCharacters(in: .whitespacesAndNewlines))
+        receiverCode = ""
+        receiverStatus = "Párování na iPhonu zrušeno."
+        startReceiverHeartbeat()
+    }
+
+    private func signature(_ payload: String, tokenHex: String) -> String? {
+        guard tokenHex.count == 64 else { return nil }
+        var keyBytes = [UInt8]()
+        for offset in stride(from: 0, to: tokenHex.count, by: 2) {
+            let a = tokenHex.index(tokenHex.startIndex, offsetBy: offset)
+            let b = tokenHex.index(a, offsetBy: 2)
+            guard let byte = UInt8(tokenHex[a..<b], radix: 16) else { return nil }
+            keyBytes.append(byte)
+        }
+        let mac = HMAC<SHA256>.authenticationCode(
+            for: Data(payload.utf8), using: SymmetricKey(data: Data(keyBytes)))
+        return mac.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func startReceiverHeartbeat() {
+        receiverHeartbeatTask?.cancel()
+        liveReceiver?.cancel()
+        liveReceiver = nil
+        liveReceiverReady = false
+        receiverConnected = false
+        lastPong = nil
+        lastCaptionAcknowledgement = ""
+        let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty, ReceiverSecretStore.load(target) != nil else {
+            receiverStatus = target.isEmpty ? "Nejdříve vyber televizi." :
+                "TV je vybraná. Pro ověřené spojení ji spáruj šestímístným kódem."
+            return
+        }
+        receiverStatus = "Připojuji se ke spárované TV…"
+        let conn = NWConnection(host: .init(target), port: .init(integerLiteral: 41989), using: .udp)
+        liveReceiver = conn
+        liveReceiverTarget = target
+        conn.stateUpdateHandler = { [weak self, weak conn] state in
+            guard let conn else { return }
+            switch state {
+            case .ready:
+                Task { @MainActor in
+                    guard let self, self.liveReceiver === conn, self.ip == target else { return }
+                    self.liveReceiverReady = true
+                    self.readReceiverReply(on: conn, target: target)
+                    self.receiverHeartbeatTask = Task { [weak self] in
+                        while !Task.isCancelled {
+                            guard let self, let token = ReceiverSecretStore.load(target),
+                                  self.liveReceiver === conn else { break }
+                            let nonce = UUID().uuidString
+                            let body = "PING\t\(self.receiverID)\t\(nonce)"
+                            if let mac = self.signature(body, tokenHex: token) {
+                                conn.send(content: Data("PCPAIR1\t\(body)\t\(mac)".utf8),
+                                          completion: .contentProcessed { _ in })
+                            }
+                            try? await Task.sleep(for: .seconds(3))
+                            guard !Task.isCancelled else { break }
+                            if let last = self.lastPong, Date().timeIntervalSince(last) < 9 {
+                                self.receiverConnected = true
+                                self.receiverStatus = "TV spárovaná · spojení aktivní"
+                            } else {
+                                self.receiverConnected = false
+                                self.receiverStatus = "TV spárovaná · čekám na odpověď"
+                            }
+                        }
+                    }
+                }
+            case .failed(let error):
+                Task { @MainActor in
+                    guard let self, self.liveReceiver === conn else { return }
+                    self.liveReceiverReady = false
+                    self.receiverConnected = false
+                    self.receiverStatus = "TV neodpovídá: \(error.localizedDescription)"
+                }
+            case .cancelled:
+                Task { @MainActor in
+                    if let self, self.liveReceiver === conn { self.liveReceiverReady = false }
+                }
+            default: break
+            }
+        }
+        conn.start(queue: queue)
+    }
+
+    private func readReceiverReply(on conn: NWConnection, target: String) {
+        conn.receiveMessage { [weak self, weak conn] data, _, _, error in
+            guard let conn else { return }
+            Task { @MainActor in
+                guard let self, self.liveReceiver === conn, self.ip == target else { return }
+                if let data, let raw = String(data: data, encoding: .utf8) {
+                    let fields = raw.components(separatedBy: "\t")
+                    if fields.count >= 3 && fields[0] == "PCPAIR1" && fields[1] == "PONG" {
+                        self.lastPong = Date()
+                        self.receiverConnected = true
+                        self.receiverStatus = "TV spárovaná · spojení aktivní"
+                    } else if fields.count >= 3 && fields[0] == "PCA1" &&
+                                fields[2] == "RECEIVED" {
+                        self.lastCaptionAcknowledgement = "Televize potvrdila přijetí titulku."
+                        self.message = self.lastCaptionAcknowledgement
+                    }
+                }
+                if error == nil { self.readReceiverReply(on: conn, target: target) }
+            }
+        }
+    }
+
+    /// Authenticated subtitle sent through the verified receiver session.
+    /// Original PlayCaption 0.22 still receives regular PCT1 when not paired.
+    private func sendSignedSubtitle(_ canonicalPayload: Data, to target: String,
+                                    reportStatus: Bool) -> Bool {
+        guard let token = ReceiverSecretStore.load(target) else { return false }
+        let encoded = canonicalPayload.base64EncodedString()
+        let body = "TEXT\t\(receiverID)\t\(encoded)"
+        guard let mac = signature(body, tokenHex: token) else { return false }
+        let packet = Data("PCPAIR1\t\(body)\t\(mac)".utf8)
+        if liveReceiverReady, liveReceiverTarget == target, let conn = liveReceiver {
+            conn.send(content: packet, completion: .contentProcessed { [weak self] error in
+                if reportStatus {
+                    Task { @MainActor in
+                        self?.message = error == nil
+                            ? "Titulek odeslán. Čekám na potvrzení TV…"
+                            : "Chyba odeslání: \(error!.localizedDescription)"
+                    }
+                }
+            })
+        } else {
+            sendDatagram(packet, to: target, reportStatus: reportStatus)
+        }
+        return true
+    }
+
     /// Sends one packet and repeats it once a second while the caption is valid,
     /// matching Android's heartbeat. Preview uses the Android layout/edit flag so
     /// Google TV shows it even when HDMI is not the selected input.
@@ -182,16 +453,21 @@ final class PlayCaptionTV: ObservableObject {
         let y = (prefs.object(forKey: "outputBottom") as? Double) ?? 0.93
         let width = (prefs.object(forKey: "outputWidth") as? Double) ?? 0.62
         let font = (prefs.object(forKey: "outputFont") as? Double) ?? 1.0
-        let layout = "\t\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
+        let layout = "\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
         let payload = Data("PCT1\t\(sequence)\t\(max(0, duration))\t\(clean)\t\(layout)".utf8)
-        sendDatagram(payload, to: target, reportStatus: true)
+        if !sendSignedSubtitle(payload, to: target, reportStatus: true) {
+            sendDatagram(payload, to: target, reportStatus: true)
+        }
         guard duration > 0 else { return }
         repeatTask = Task { [weak self] in
             let expiry = Date().addingTimeInterval(Double(duration) / 1000.0)
             while !Task.isCancelled && Date() < expiry {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled, Date() < expiry else { break }
-                self?.sendDatagram(payload, to: target, reportStatus: false)
+                guard let self else { break }
+                if !self.sendSignedSubtitle(payload, to: target, reportStatus: false) {
+                    self.sendDatagram(payload, to: target, reportStatus: false)
+                }
             }
         }
     }
@@ -219,7 +495,8 @@ final class PlayCaptionTV: ObservableObject {
     /// A selected value of -2 signals the Android "Text" (letter/SMS) mode.
     func sendChoices(_ items: [String], area: CGRect,
                      asText: Bool = false,
-                     showFrame: Bool = false) {
+                     showFrame: Bool = false,
+                     outputArea: CGRect? = nil) {
         let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { return }
         let escaped = items.joined(separator: "\n")
@@ -228,8 +505,19 @@ final class PlayCaptionTV: ObservableObject {
             .replacingOccurrences(of: "\n", with: "\\n")
         let frameFlag = showFrame ? 1 : 0
         let chosen = asText ? -2 : -1
-        let packet = "PCV1\t\(choicesSequence)\t\(frameFlag)\t\(area.minX)\t\(area.minY)\t\(area.maxX)\t\(area.maxY)\t\(chosen)\t\(escaped)"
-        sendDatagram(Data(packet.utf8), to: target, reportStatus: false)
+        // PCV1 extension: four optional screen-normalized output coordinates.
+        // Older PlayCaption receivers ignore additional fields safely.
+        let outputSuffix: String
+        if let rect = outputArea {
+            outputSuffix = "\t\(rect.minX)\t\(rect.minY)\t\(rect.maxX)\t\(rect.maxY)"
+        } else {
+            outputSuffix = ""
+        }
+        let packet = "PCV1\t\(choicesSequence)\t\(frameFlag)\t\(area.minX)\t\(area.minY)\t\(area.maxX)\t\(area.maxY)\t\(chosen)\t\(escaped)\(outputSuffix)"
+        let bytes = Data(packet.utf8)
+        if !sendSignedSubtitle(bytes, to: target, reportStatus: false) {
+            sendDatagram(bytes, to: target, reportStatus: false)
+        }
     }
 
     private func sendDatagram(_ payload: Data, to target: String, reportStatus: Bool) {

@@ -98,7 +98,9 @@ final class CaptionAppModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(choicesEnabled, forKey: "choicesEnabled")
             Task { await pipeline.resetOptions() }
-            if !choicesEnabled { tv.sendChoices([], area: choicesArea) }
+            if !choicesEnabled {
+                tv.sendChoices([], area: choicesArea, outputArea: choicesOutputArea)
+            }
         }
     }
     @Published var choicesTextMode = UserDefaults.standard.bool(forKey: "choicesTextMode") {
@@ -123,6 +125,28 @@ final class CaptionAppModel: ObservableObject {
             }
         }
     }
+    /// Output rectangle for text recognized in the yellow region.
+    /// This is independent of the green ordinary-dialogue output.
+    @Published var choicesOutputArea: CGRect = {
+        let fallback = CGRect(x: 0.18, y: 0.76, width: 0.64, height: 0.16)
+        guard let data = UserDefaults.standard.data(forKey: "choicesOutputArea"),
+              let rect = try? JSONDecoder().decode(CGRect.self, from: data),
+              rect.width >= 0.10, rect.height >= 0.05,
+              rect.minX >= 0, rect.minY >= 0,
+              rect.maxX <= 1, rect.maxY <= 1
+        else { return fallback }
+        return rect
+    }() {
+        didSet {
+            if let data = try? JSONEncoder().encode(choicesOutputArea) {
+                UserDefaults.standard.set(data, forKey: "choicesOutputArea")
+            }
+        }
+    }
+    @Published var choicesOutputLocked = UserDefaults.standard.bool(forKey: "choicesOutputLocked") {
+        didSet { UserDefaults.standard.set(choicesOutputLocked, forKey: "choicesOutputLocked") }
+    }
+
     @Published var lastChoices = ""
     @Published var logLines: [String] = []
     @Published var gameProfiles: [GameSubtitleProfile] = {
@@ -182,6 +206,8 @@ final class CaptionAppModel: ObservableObject {
             choicesTextMode: choicesTextMode,
             choicesArea: choicesArea,
             choicesLocked: choicesLocked,
+            choicesOutputArea: choicesOutputArea,
+            choicesOutputLocked: choicesOutputLocked,
             subtitleDuration: subtitleDuration,
             skipOldTranslations: skipOldTranslations,
             maxTranslationAge: maxTranslationAge
@@ -212,6 +238,8 @@ final class CaptionAppModel: ObservableObject {
         choicesTextMode = profile.choicesTextMode
         choicesLocked = profile.choicesLocked
         choicesEnabled = profile.choicesEnabled
+        if let rect = profile.choicesOutputArea { choicesOutputArea = rect }
+        if let locked = profile.choicesOutputLocked { choicesOutputLocked = locked }
         subtitleDuration = profile.subtitleDuration
         skipOldTranslations = profile.skipOldTranslations
         maxTranslationAge = profile.maxTranslationAge
@@ -271,7 +299,8 @@ final class CaptionAppModel: ObservableObject {
                               self.choicesArea == area,
                               self.choicesTextMode == asText else { return }
                         self.lastChoices = translated.joined(separator: " · ")
-                        self.tv.sendChoices(translated, area: area, asText: asText)
+                        self.tv.sendChoices(translated, area: area, asText: asText,
+                                            outputArea: self.choicesOutputArea)
                         self.write("Volby: \(translated.count) rozpoznaných položek")
                     }
                 }
@@ -331,7 +360,7 @@ final class CaptionAppModel: ObservableObject {
         isRunning = false
         UIApplication.shared.isIdleTimerDisabled = false
         tv.sendSubtitle("", duration: 0)
-        tv.sendChoices([], area: choicesArea)
+        tv.sendChoices([], area: choicesArea, outputArea: choicesOutputArea)
         lastChoices = ""
         status = "Zastaveno"
     }
@@ -688,21 +717,62 @@ struct TVSelectionView: View {
             }
 
             Divider()
-            Label("Pro titulky z Xboxu není párovací kód potřeba.",
-                  systemImage: "info.circle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Párování iPhonu s televizí", systemImage: "link")
+                    .font(.subheadline.bold())
+                if tv.receiverPaired {
+                    Label(tv.receiverConnected
+                          ? "Spárováno · připojeno k TV"
+                          : "Spárováno · spojení zatím nepotvrzeno",
+                          systemImage: tv.receiverConnected
+                          ? "checkmark.circle.fill" : "clock")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(tv.receiverConnected ? .green : .orange)
+                    Button("Zrušit uložené párování") {
+                        tv.forgetReceiver()
+                    }
+                    .font(.caption)
+                    .tint(.secondary)
+                } else {
+                    Text("Na naší testovací TV aplikaci zvol „Spárovat iPhone“ a sem zadej šestimístný kód. Nejde o přihlášení k Xboxu.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        TextField("6místný kód z TV", text: $tv.receiverCode)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: tv.receiverCode) { _, newValue in
+                                tv.receiverCode = String(newValue.filter { $0.isNumber }.prefix(6))
+                            }
+                        Button("Spárovat") {
+                            tv.pairReceiver()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .disabled(chosenIP.isEmpty || tv.receiverCode.count != 6)
+                    }
+                }
+                Text(tv.receiverStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(13)
+            .background(Color.white.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 13))
 
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: chosenIP.isEmpty
-                      ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                Image(systemName: tv.receiverConnected
+                      ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(chosenIP.isEmpty ? .orange : .green)
+                    .foregroundStyle(tv.receiverConnected ? .green : .orange)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(chosenIP.isEmpty
-                         ? "Nejdříve vyber televizi" : "iPhone je připraven odesílat titulky")
+                    Text(tv.receiverConnected
+                         ? "Televize potvrdila spojení"
+                         : "Příjem titulků na TV zatím nepotvrzen")
                         .font(.subheadline.bold())
-                    Text("Na televizi zapni režim „S telefonem“.")
+                    Text("Na TV použij režim „S mobilem“ a potom testovací titulek.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -418,6 +418,9 @@ struct GameSubtitleProfile: Codable, Identifiable {
     var choicesTextMode: Bool
     var choicesArea: CGRect
     var choicesLocked: Bool
+    /// Optional to preserve previously saved 0.2.0 game profiles.
+    var choicesOutputArea: CGRect?
+    var choicesOutputLocked: Bool?
     var subtitleDuration: Double
     var skipOldTranslations: Bool
     var maxTranslationAge: Double

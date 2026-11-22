@@ -11,6 +11,7 @@ struct SubtitleSettingsView: View {
         case reading = "Čtení"
         case output = "Zobrazení"
         case choices = "Volby odpovědí"
+        case outputChoices = "Překlad herních textů"
     }
 
     /// Green rectangle represents where the TV places Czech captions.
@@ -37,9 +38,9 @@ struct SubtitleSettingsView: View {
                             .foregroundStyle(.green)
                         Label("Žlutá – odkud číst volby / herní text", systemImage: "square.dashed")
                             .foregroundStyle(.yellow)
-                        Label("Oranžová – vlastní poloha překladu voleb (zatím nepodporováno)",
-                              systemImage: "lock")
-                            .foregroundStyle(.orange.opacity(0.85))
+                        Label("Oranžová – kam zobrazit překlad žluté oblasti",
+                              systemImage: "square.dashed")
+                            .foregroundStyle(.orange)
                     }
                     .font(.caption)
                     .padding(12)
@@ -48,9 +49,10 @@ struct SubtitleSettingsView: View {
                                 in: RoundedRectangle(cornerRadius: 12))
 
                     Picker("Co upravovat", selection: $editing) {
-                        Text("Modrý · Čtení").tag(Area.reading)
-                        Text("Zelený · Titulky na TV").tag(Area.output)
-                        Text("Žlutý · Volby").tag(Area.choices)
+                        Text("Modrá").tag(Area.reading)
+                        Text("Zelená").tag(Area.output)
+                        Text("Žlutá").tag(Area.choices)
+                        Text("Oranžová").tag(Area.outputChoices)
                     }
                     .pickerStyle(.segmented)
 
@@ -63,8 +65,10 @@ struct SubtitleSettingsView: View {
                         readControls
                     } else if editing == .output {
                         outputControls
-                    } else {
+                    } else if editing == .choices {
                         choicesControls
+                    } else {
+                        choicesOutputControls
                     }
                 }
                 .padding(16)
@@ -105,6 +109,10 @@ struct SubtitleSettingsView: View {
                     rectangle(model.choicesArea, color: .yellow,
                               name: model.choicesTextMode ? "Text" : "Volby",
                               selected: editing == .choices,
+                              size: geo.size)
+                    rectangle(model.choicesOutputArea, color: .orange,
+                              name: "Český překlad",
+                              selected: editing == .outputChoices,
                               size: geo.size)
                 }
 
@@ -158,12 +166,18 @@ struct SubtitleSettingsView: View {
             let h = CGFloat(0.12 * model.outputFont)
             model.outputX = Double(max(width / 2, min(1 - width / 2, x)))
             model.outputBottom = Double(max(h, min(1, y + h / 2)))
-        } else {
+        } else if editing == .choices {
             guard model.choicesEnabled, !model.choicesLocked else { return }
             var rect = model.choicesArea
             rect.origin.x = max(0, min(1 - rect.width, x - rect.width / 2))
             rect.origin.y = max(0, min(1 - rect.height, y - rect.height / 2))
             model.choicesArea = rect
+        } else {
+            guard model.choicesEnabled, !model.choicesOutputLocked else { return }
+            var rect = model.choicesOutputArea
+            rect.origin.x = max(0, min(1 - rect.width, x - rect.width / 2))
+            rect.origin.y = max(0, min(1 - rect.height, y - rect.height / 2))
+            model.choicesOutputArea = rect
         }
     }
 
@@ -268,7 +282,8 @@ struct SubtitleSettingsView: View {
                 }
                 Button("Ukázat žlutý rámeček na TCL") {
                     model.tv.sendChoices([], area: model.choicesArea,
-                                         asText: model.choicesTextMode, showFrame: true)
+                                         asText: model.choicesTextMode, showFrame: true,
+                                         outputArea: model.choicesOutputArea)
                 }
                 .buttonStyle(.bordered)
                 .tint(.yellow)
@@ -282,7 +297,7 @@ struct SubtitleSettingsView: View {
                                                width: 0.40, height: 0.35)
                     showOnTV()
                 }.font(.subheadline)
-                Text("Překlad těchto voleb původní PlayCaption na TV automaticky umisťuje vedle žluté oblasti. Samostatný oranžový rámeček pro výstup nyní TV přijímač nepodporuje.")
+                Text("Polohu českého překladu nastav v oranžové oblasti. Naše vlastní TV aplikace ji podporuje nezávisle na žluté oblasti.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("Experimentální režim: iPhone už umí číst a posílat volby nebo text do původního PlayCaption. Zatím ale neurčuje, která možnost je ve hře zvýrazněná; to doplníme po testu.")
@@ -292,6 +307,55 @@ struct SubtitleSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var choicesOutputControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Oranžový rámeček – kam zobrazit překlad herních textů")
+                .font(.headline)
+            Text("Žlutý rámeček určuje, odkud se anglický text čte. Oranžový určuje jeho české zobrazení na TCL C835.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if model.choicesEnabled {
+                Toggle("Zamknout oranžový rámeček", isOn: $model.choicesOutputLocked)
+                if !model.choicesOutputLocked {
+                    Text("Šířka: \(Int(model.choicesOutputArea.width * 100)) %")
+                    Slider(value: Binding(
+                        get: { Double(model.choicesOutputArea.width) },
+                        set: { updateChoicesOutputSize(width: CGFloat($0), height: nil) }
+                    ), in: 0.20...0.95)
+                    Text("Výška: \(Int(model.choicesOutputArea.height * 100)) %")
+                    Slider(value: Binding(
+                        get: { Double(model.choicesOutputArea.height) },
+                        set: { updateChoicesOutputSize(width: nil, height: CGFloat($0)) }
+                    ), in: 0.08...0.40)
+                }
+                Button("Ukázat oranžový překlad na TCL") {
+                    showOnTV()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                Button("Obnovit výchozí polohu") {
+                    model.choicesOutputArea = CGRect(x: 0.18, y: 0.76,
+                                                     width: 0.64, height: 0.16)
+                    showOnTV()
+                }
+                .font(.subheadline)
+            } else {
+                Text("Nejdříve zapni překlad herních textů ve žluté oblasti.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func updateChoicesOutputSize(width: CGFloat?, height: CGFloat?) {
+        var area = model.choicesOutputArea
+        let center = CGPoint(x: area.midX, y: area.midY)
+        if let width { area.size.width = width }
+        if let height { area.size.height = height }
+        area.origin.x = max(0, min(1 - area.width, center.x - area.width / 2))
+        area.origin.y = max(0, min(1 - area.height, center.y - area.height / 2))
+        model.choicesOutputArea = area
     }
 
     private func updateChoicesSize(width: CGFloat?, height: CGFloat?) {
@@ -320,10 +384,16 @@ struct SubtitleSettingsView: View {
             model.tv.showOCRRegion(model.manualOCRBox, visible: true)
         } else if editing == .output {
             model.tv.sendSubtitle("Ukázka českých titulků", duration: 6000, preview: true)
-        } else {
+        } else if editing == .choices {
             guard model.choicesEnabled else { return }
             model.tv.sendChoices([], area: model.choicesArea,
-                                 asText: model.choicesTextMode, showFrame: true)
+                                 asText: model.choicesTextMode, showFrame: true,
+                                 outputArea: model.choicesOutputArea)
+        } else {
+            guard model.choicesEnabled else { return }
+            model.tv.sendChoices(["Ukázka českého překladu"],
+                                 area: model.choicesArea, asText: true,
+                                 showFrame: false, outputArea: model.choicesOutputArea)
         }
     }
 }
