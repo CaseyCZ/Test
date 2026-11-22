@@ -404,6 +404,7 @@ struct GameSubtitleProfile: Codable, Identifiable {
     var name: String
     var region: String
     var manualOCR: Bool
+    var manualOCRLocked: Bool
     var manualOCRBox: CGRect
     var filterMenuText: Bool
     var ocrMode: String
@@ -412,9 +413,11 @@ struct GameSubtitleProfile: Codable, Identifiable {
     var outputBottom: Double
     var outputWidth: Double
     var outputFont: Double
+    var outputLocked: Bool
     var choicesEnabled: Bool
     var choicesTextMode: Bool
     var choicesArea: CGRect
+    var choicesLocked: Bool
     var subtitleDuration: Double
     var skipOldTranslations: Bool
     var maxTranslationAge: Double
