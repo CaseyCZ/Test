@@ -88,12 +88,28 @@ actor CaptionPipeline {
     private var emptyReads = 0
     private var revision = 0
 
+    // Text painted onto a moving car may enter the subtitle ROI. Match the
+    // screen-space position and content across successive OCR frames before
+    // treating a candidate as dialogue. Never share this state with choices.
+    private var pendingDialogue = ""
+    private var pendingBounds: CGRect = .zero
+    private var pendingHits = 0
+    private var pendingAt = Date.distantPast
+
+    private func resetCandidate() {
+        pendingDialogue = ""
+        pendingBounds = .zero
+        pendingHits = 0
+        pendingAt = .distantPast
+    }
+
     func resetDialogue() {
         lastText = ""
         lastRead = .distantPast
         lastSeen = .distantPast
         lastSettings = ""
         emptyReads = 0
+        resetCandidate()
         revision += 1
     }
 
@@ -106,17 +122,19 @@ actor CaptionPipeline {
                    manualArea: CGRect?,
                    filterMenus: Bool,
                    mode: OCRMode = .classic,
-                   expandOnEmpty: Bool = false) -> RecognizedCaption? {
+                   expandOnEmpty: Bool = false,
+                   dialogueGuard: Bool = true) -> RecognizedCaption? {
         let baseROI = manualArea.map { CGRect(
             x: $0.minX, y: 1 - $0.maxY, width: $0.width, height: $0.height
         ) } ?? region.rect
-        let settings = "\(baseROI)|\(filterMenus)|\(mode.rawValue)|\(expandOnEmpty)"
+        let settings = "\(baseROI)|\(filterMenus)|\(mode.rawValue)|\(expandOnEmpty)|\(dialogueGuard)"
         if settings != lastSettings {
             lastSettings = settings
             lastText = ""
             lastRead = .distantPast
             lastSeen = .distantPast
             emptyReads = 0
+            resetCandidate()
             revision += 1
         }
 
@@ -137,27 +155,71 @@ actor CaptionPipeline {
         do {
             try VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform([request])
             let minLetters = mode == .street ? 2 : 3
-            let lines = (request.results ?? []).compactMap { item -> String? in
-                guard let candidate = item.topCandidates(1).first else { return nil }
-                let line = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            let candidates = (request.results ?? []).compactMap { item -> (text: String, box: CGRect)? in
+                guard let recognized = item.topCandidates(1).first else { return nil }
+                let line = recognized.string.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard line.filter({ $0.isLetter }).count >= minLetters else { return nil }
                 if filterMenus && looksLikeMenu(line, conservative: mode != .classic) {
                     return nil
                 }
-                return line
+                // Logos on cars can stay fixed on screen with a chase camera.
+                // In guarded mode, avoid translating isolated names/brands even
+                // if they happen to sit exactly inside the subtitle rectangle.
+                if dialogueGuard && looksLikeSceneLabel(line) { return nil }
+                return (line, item.boundingBox)
             }
-            let text = lines.joined(separator: " ")
+
+            // The unfiltered mode preserves original behavior for fast/short
+            // dialogue and games whose subtitles are not centered.
+            let selected: [(text: String, box: CGRect)]
+            if dialogueGuard {
+                let centered = candidates.filter { abs($0.box.midX - 0.5) < 0.35 }
+                    .sorted { $0.box.midY < $1.box.midY }
+                // Choose the lowest screen-centered subtitle and nearby stacked
+                // lines. Do not concatenate unrelated car decals/HUD labels.
+                if let bottom = centered.first {
+                    selected = centered.filter {
+                        abs($0.box.midY - bottom.box.midY) < 0.085 &&
+                        abs($0.box.midX - bottom.box.midX) < 0.23
+                    }.sorted { $0.box.midY > $1.box.midY }
+                } else {
+                    selected = []
+                }
+            } else {
+                selected = candidates
+            }
+            let text = selected.map { $0.text }.joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard text.count >= (mode == .street ? 2 : 4),
                   text.filter({ $0.isLetter }).count >= minLetters else {
                 emptyReads += 1
+                if now.timeIntervalSince(pendingAt) > 1.6 { resetCandidate() }
                 // A repeated greeting must be eligible again after it disappears.
                 if !lastText.isEmpty && now.timeIntervalSince(lastSeen) > 1.0 {
-                    // Allow the same phrase again without invalidating a
-                    // translation still in flight for the last visible line.
                     lastText = ""
                 }
                 return nil
+            }
+
+            // Ignore text that moves through the subtitle band with the scene.
+            // A stable screen overlay will appear at nearly the same bounds
+            // for two samples; a single unpunctuated label needs three.
+            if dialogueGuard, let anchor = selected.last?.box {
+                let normalized = text.lowercased().filter { $0.isLetter || $0.isNumber }
+                let compatible = normalized == pendingDialogue &&
+                    now.timeIntervalSince(pendingAt) < 1.6 &&
+                    abs(anchor.midX - pendingBounds.midX) < 0.035 &&
+                    abs(anchor.midY - pendingBounds.midY) < 0.025
+                pendingHits = compatible ? pendingHits + 1 : 1
+                pendingDialogue = normalized
+                pendingBounds = anchor
+                pendingAt = now
+                let words = text.split(whereSeparator: { $0.isWhitespace })
+                let weakSingleLabel = words.count == 1 &&
+                    !text.contains(where: { ".!?,:;".contains($0) })
+                guard pendingHits >= (weakSingleLabel ? 3 : 2) else { return nil }
+            } else {
+                resetCandidate()
             }
 
             lastSeen = now
@@ -221,6 +283,44 @@ actor CaptionPipeline {
         } catch {
             return nil
         }
+    }
+
+    /// Reject likely car brands, license plate fragments and scene labels.
+    /// This is deliberately optional: one-word dialogue and title-case
+    /// greetings may be indistinguishable without audio or game semantics.
+    private func looksLikeSceneLabel(_ raw: String) -> Bool {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = text.split(whereSeparator: { $0.isWhitespace })
+        guard !words.isEmpty else { return true }
+        // Natural utterances with punctuation should not be discarded.
+        if text.contains(where: { ".!?,:;…".contains($0) }) { return false }
+
+        let spokenSingleWords: Set<String> = [
+            "yes", "no", "yeah", "yep", "nope", "hey", "hi", "hello",
+            "wait", "stop", "help", "go", "run", "thanks", "sorry",
+            "please", "okay", "ok", "what", "why", "who", "where",
+            "shit", "damn", "right", "fine", "sure", "come", "look"
+        ]
+        let spokenShortPhrases: Set<String> = [
+            "thank you", "good morning", "good night", "come on",
+            "watch out", "get out", "oh no", "all right", "let's go"
+        ]
+        let normalized = text.lowercased()
+        if words.count == 1 {
+            return !spokenSingleWords.contains(normalized)
+        }
+        if spokenShortPhrases.contains(normalized) { return false }
+        guard words.count <= 3 else { return false }
+
+        // "Vapid Dominator", "Karin Futo", "FORD MUSTANG" etc. are much
+        // likelier to be a name than a subtitle in normal sentence case.
+        let titleOrCaps = words.allSatisfy { word in
+            let letters = word.filter { $0.isLetter }
+            guard let first = letters.first, first.isUppercase else { return false }
+            return letters.dropFirst().allSatisfy { $0.isLowercase } ||
+                letters.allSatisfy { $0.isUppercase }
+        }
+        return titleOrCaps
     }
 
     /// Conservative, optional filter for many uppercase short menu labels.

@@ -27,8 +27,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: PlayCaption iOS
-        CFBundleShortVersionString: "0.3.2"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.3.3"
+        CFBundleVersion: "6"
         LSRequiresIPhoneOS: true
         NSLocalNetworkUsageDescription: "Najde PlayCaption televizi v domácí síti a posílá do ní české titulky."
         UIRequiresPersistentWiFi: true
