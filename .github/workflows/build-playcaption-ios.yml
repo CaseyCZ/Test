@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/playcaption-ios
+      - feature/playcaption-ios-settings-v02
     paths:
       - "ios/PlayCaptionIOS/**"
       - ".github/workflows/build-playcaption-ios.yml"
@@ -54,12 +55,12 @@ jobs:
           mkdir -p "$PWD/.build/ipa/Payload"
           cp -R "$APP" "$PWD/.build/ipa/Payload/"
           cd "$PWD/.build/ipa"
-          zip -qry "$GITHUB_WORKSPACE/PlayCaptionIOS-unsigned.ipa" Payload
+          zip -qry "$GITHUB_WORKSPACE/PlayCaptionIOS-v0.2.0-unsigned.ipa" Payload
           unzip -t "$GITHUB_WORKSPACE/PlayCaptionIOS-unsigned.ipa" >/dev/null
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PlayCaptionIOS-unsigned
+          name: PlayCaptionIOS-v0.2.0-unsigned
           path: PlayCaptionIOS-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
