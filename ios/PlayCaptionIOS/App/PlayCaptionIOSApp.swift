@@ -145,6 +145,14 @@ final class CaptionAppModel: ObservableObject {
             }
         }
     }
+    /// Independent font scale for Czech translations of the yellow game-text area.
+    /// Normal dialogue subtitles continue using outputFont.
+    @Published var choicesOutputFont: Double = {
+        let saved = UserDefaults.standard.object(forKey: "choicesOutputFont") as? Double ?? 1.0
+        return saved.isFinite && (0.6...2.0).contains(saved) ? saved : 1.0
+    }() {
+        didSet { UserDefaults.standard.set(choicesOutputFont, forKey: "choicesOutputFont") }
+    }
     @Published var choicesOutputLocked = UserDefaults.standard.bool(forKey: "choicesOutputLocked") {
         didSet { UserDefaults.standard.set(choicesOutputLocked, forKey: "choicesOutputLocked") }
     }
@@ -215,6 +223,7 @@ final class CaptionAppModel: ObservableObject {
             choicesLocked: choicesLocked,
             choicesOutputArea: choicesOutputArea,
             choicesOutputLocked: choicesOutputLocked,
+            choicesOutputFont: choicesOutputFont,
             subtitleDuration: subtitleDuration,
             skipOldTranslations: skipOldTranslations,
             maxTranslationAge: maxTranslationAge
@@ -247,6 +256,7 @@ final class CaptionAppModel: ObservableObject {
         choicesEnabled = profile.choicesEnabled
         if let rect = profile.choicesOutputArea { choicesOutputArea = rect }
         if let locked = profile.choicesOutputLocked { choicesOutputLocked = locked }
+        choicesOutputFont = profile.choicesOutputFont ?? 1.0
         subtitleDuration = profile.subtitleDuration
         skipOldTranslations = profile.skipOldTranslations
         maxTranslationAge = profile.maxTranslationAge
@@ -312,7 +322,8 @@ final class CaptionAppModel: ObservableObject {
                         self.lastTranslatedChoiceIsText = asText
                         self.lastChoicesSentAt = Date()
                         self.tv.sendChoices(translated, area: area, asText: asText,
-                                            outputArea: self.choicesOutputArea)
+                                            outputArea: self.choicesOutputArea,
+                                            outputFont: self.choicesOutputFont)
                         self.write("Volby: \(translated.count) rozpoznaných položek")
                     }
                 }
@@ -375,7 +386,8 @@ final class CaptionAppModel: ObservableObject {
         else { return false }
         tv.sendChoices(lastTranslatedChoiceItems, area: choicesArea,
                        asText: lastTranslatedChoiceIsText,
-                       outputArea: choicesOutputArea)
+                       outputArea: choicesOutputArea,
+                       outputFont: choicesOutputFont)
         return true
     }
 
