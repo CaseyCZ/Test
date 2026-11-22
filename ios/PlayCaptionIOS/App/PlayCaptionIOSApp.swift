@@ -54,6 +54,12 @@ final class CaptionAppModel: ObservableObject {
     @Published var filterMenuText = (UserDefaults.standard.object(forKey: "filterMenuText") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(filterMenuText, forKey: "filterMenuText") }
     }
+    /// Guard against brand names and environmental labels crossing subtitle ROI.
+    /// Optional because it needs 2-3 matching OCR samples and can miss fast lines.
+    @Published var dialogueGuardEnabled =
+        (UserDefaults.standard.object(forKey: "dialogueGuardEnabled") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(dialogueGuardEnabled, forKey: "dialogueGuardEnabled") }
+    }
     // Android-compatible manual OCR rectangle (normalized coordinates with
     // top-left origin). The default matches OblastTitulku.VYCHOZI.
     @Published var manualOCR = UserDefaults.standard.bool(forKey: "manualOCR") {
@@ -195,6 +201,7 @@ final class CaptionAppModel: ObservableObject {
             manualOCRLocked: manualOCRLocked,
             manualOCRBox: manualOCRBox,
             filterMenuText: filterMenuText,
+            dialogueGuardEnabled: dialogueGuardEnabled,
             ocrMode: ocrMode.rawValue,
             expandOnEmpty: expandOnEmpty,
             outputX: outputX,
@@ -227,6 +234,7 @@ final class CaptionAppModel: ObservableObject {
         manualOCRLocked = profile.manualOCRLocked
         manualOCRBox = profile.manualOCRBox
         filterMenuText = profile.filterMenuText
+        if let value = profile.dialogueGuardEnabled { dialogueGuardEnabled = value }
         ocrMode = OCRMode(rawValue: profile.ocrMode) ?? .classic
         expandOnEmpty = profile.expandOnEmpty
         outputX = profile.outputX
@@ -314,7 +322,8 @@ final class CaptionAppModel: ObservableObject {
                         manualArea: self.manualOCR ? self.manualOCRBox : nil,
                         filterMenus: self.filterMenuText,
                         mode: self.ocrMode,
-                        expandOnEmpty: self.expandOnEmpty
+                        expandOnEmpty: self.expandOnEmpty,
+                        dialogueGuard: self.dialogueGuardEnabled
                     )
                     self.processingOCR = false
                     if let reading, self.isRunning,
