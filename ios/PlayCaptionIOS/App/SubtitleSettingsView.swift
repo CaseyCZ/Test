@@ -180,6 +180,7 @@ struct SubtitleSettingsView: View {
             rect.origin.x = max(0, min(1 - rect.width, x - rect.width / 2))
             rect.origin.y = max(0, min(1 - rect.height, y - rect.height / 2))
             model.choicesOutputArea = rect
+            scheduleOrangeRelocation()
         }
     }
 
@@ -358,6 +359,7 @@ struct SubtitleSettingsView: View {
         area.origin.x = max(0, min(1 - area.width, center.x - area.width / 2))
         area.origin.y = max(0, min(1 - area.height, center.y - area.height / 2))
         model.choicesOutputArea = area
+        scheduleOrangeRelocation()
     }
 
     private func updateChoicesSize(width: CGFloat?, height: CGFloat?) {
@@ -380,6 +382,18 @@ struct SubtitleSettingsView: View {
         model.manualOCRBox = area
     }
 
+    // Debounce drag/slider changes while a game is running. When a game text
+    // is already visible, move that same translation instead of showing a demo.
+    private func scheduleOrangeRelocation() {
+        guard model.isRunning else { return }
+        orangePreviewTask?.cancel()
+        orangePreviewTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            model.relocateActiveChoices()
+        }
+    }
+
     private func showOnTV() {
         if editing == .reading {
             guard model.manualOCR else { return }
@@ -393,9 +407,13 @@ struct SubtitleSettingsView: View {
                                  outputArea: model.choicesOutputArea)
         } else {
             guard model.choicesEnabled else { return }
-            // During a game, don't overwrite the current translated text.
-            // Subsequent game text will automatically use the new rectangle.
-            guard !model.isRunning else { return }
+            // During a game, resend only the current real translation at its
+            // new coordinates. The sample is reserved for idle preview mode.
+            if model.isRunning {
+                orangePreviewTask?.cancel()
+                model.relocateActiveChoices()
+                return
+            }
             orangePreviewTask?.cancel()
             model.tv.sendChoices(["Ukázka českého překladu"],
                                  area: model.choicesArea, asText: true,
