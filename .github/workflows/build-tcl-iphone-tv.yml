@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feature/tcl835-iphone-tv-bridge-20261122
+      - feature/tcl835-orange-tv-v2
     paths:
       - ".github/workflows/build-tcl-iphone-tv.yml"
       - "tools/patch_tv_iphone.py"
@@ -52,6 +53,9 @@ jobs:
           grep -q "PCA1" upstream/app/src/main/java/cz/titulky/tv/Propojeni.kt
           grep -q "statistikaPrijmu" upstream/app/src/main/java/cz/titulky/tv/PrijemService.kt
           grep -q "Test překryvu TV" upstream/app/src/main/java/cz/titulky/tv/MainActivity.kt
+          grep -q "EXTRA_VYSTUP_VOLEB" upstream/app/src/main/java/cz/titulky/tv/OverlayService.kt
+          grep -q "maximalniVyska" upstream/app/src/main/java/cz/titulky/tv/OverlayService.kt
+          grep -q "IPhoneTVPairing.verify" upstream/app/src/main/java/cz/titulky/tv/Propojeni.kt
       - name: Compatible Gradle wrapper
         run: |
           sed -i 's@gradle-9\.6\.0-bin\.zip@gradle-8.7-bin.zip@' upstream/gradle/wrapper/gradle-wrapper.properties
@@ -68,13 +72,13 @@ jobs:
           APK=$(find upstream/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)
           test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep "package: name='cz.titulky.tv.iphonebridge'"
-          cp "$APK" "PlayCaption-TCL-C835-iPhone-TV-TEST.apk"
+          cp "$APK" "PlayCaption-TCL-C835-Orange-v2-TEST.apk"
       - name: Upload standalone TV APK
         uses: actions/upload-artifact@v4
         with:
-          name: PlayCaption-TCL-C835-iPhone-TV-TEST
+          name: PlayCaption-TCL-C835-Orange-v2-TEST
           path: |
-            PlayCaption-TCL-C835-iPhone-TV-TEST.apk
+            PlayCaption-TCL-C835-Orange-v2-TEST.apk
             kit/tools/patch_tv_iphone.py
           if-no-files-found: error
           retention-days: 30
