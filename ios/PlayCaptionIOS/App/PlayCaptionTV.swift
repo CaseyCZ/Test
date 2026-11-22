@@ -453,8 +453,18 @@ final class PlayCaptionTV: ObservableObject {
         let y = (prefs.object(forKey: "outputBottom") as? Double) ?? 0.93
         let width = (prefs.object(forKey: "outputWidth") as? Double) ?? 0.62
         let font = (prefs.object(forKey: "outputFont") as? Double) ?? 1.0
-        let layout = "\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
-        let payload = Data("PCT1\t\(sequence)\t\(max(0, duration))\t\(clean)\t\(layout)".utf8)
+        // Original PlayCaption 0.22 PCT1 protocol:
+        // [0] magic, [1] sequence, [2] milliseconds, [3] subtitle text,
+        // [4] optional hint (empty for iPhone), [5] x, [6] bottom,
+        // [7] width, [8] font, [9] show green edit frame.
+        // In v0.3.0 the missing empty [4] shifted every TV coordinate,
+        // causing a full-width black strip around the middle of the screen.
+        let fields = [
+            "PCT1", String(sequence), String(max(0, duration)),
+            clean, "", String(x), String(y), String(width), String(font),
+            preview ? "1" : "0"
+        ]
+        let payload = Data(fields.joined(separator: "\t").utf8)
         if !sendSignedSubtitle(payload, to: target, reportStatus: true) {
             sendDatagram(payload, to: target, reportStatus: true)
         }
