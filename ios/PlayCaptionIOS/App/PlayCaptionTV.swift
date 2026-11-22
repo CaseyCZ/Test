@@ -495,7 +495,8 @@ final class PlayCaptionTV: ObservableObject {
     /// A selected value of -2 signals the Android "Text" (letter/SMS) mode.
     func sendChoices(_ items: [String], area: CGRect,
                      asText: Bool = false,
-                     showFrame: Bool = false) {
+                     showFrame: Bool = false,
+                     outputArea: CGRect? = nil) {
         let target = ip.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { return }
         let escaped = items.joined(separator: "\n")
@@ -504,8 +505,19 @@ final class PlayCaptionTV: ObservableObject {
             .replacingOccurrences(of: "\n", with: "\\n")
         let frameFlag = showFrame ? 1 : 0
         let chosen = asText ? -2 : -1
-        let packet = "PCV1\t\(choicesSequence)\t\(frameFlag)\t\(area.minX)\t\(area.minY)\t\(area.maxX)\t\(area.maxY)\t\(chosen)\t\(escaped)"
-        sendDatagram(Data(packet.utf8), to: target, reportStatus: false)
+        // PCV1 extension: four optional screen-normalized output coordinates.
+        // Older PlayCaption receivers ignore additional fields safely.
+        let outputSuffix: String
+        if let rect = outputArea {
+            outputSuffix = "\t\(rect.minX)\t\(rect.minY)\t\(rect.maxX)\t\(rect.maxY)"
+        } else {
+            outputSuffix = ""
+        }
+        let packet = "PCV1\t\(choicesSequence)\t\(frameFlag)\t\(area.minX)\t\(area.minY)\t\(area.maxX)\t\(area.maxY)\t\(chosen)\t\(escaped)\(outputSuffix)"
+        let bytes = Data(packet.utf8)
+        if !sendSignedSubtitle(bytes, to: target, reportStatus: false) {
+            sendDatagram(bytes, to: target, reportStatus: false)
+        }
     }
 
     private func sendDatagram(_ payload: Data, to target: String, reportStatus: Bool) {
