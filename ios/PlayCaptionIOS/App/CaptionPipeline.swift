@@ -162,6 +162,10 @@ actor CaptionPipeline {
                 if filterMenus && looksLikeMenu(line, conservative: mode != .classic) {
                     return nil
                 }
+                // Logos on cars can stay fixed on screen with a chase camera.
+                // In guarded mode, avoid translating isolated names/brands even
+                // if they happen to sit exactly inside the subtitle rectangle.
+                if dialogueGuard && looksLikeSceneLabel(line) { return nil }
                 return (line, item.boundingBox)
             }
 
@@ -279,6 +283,44 @@ actor CaptionPipeline {
         } catch {
             return nil
         }
+    }
+
+    /// Reject likely car brands, license plate fragments and scene labels.
+    /// This is deliberately optional: one-word dialogue and title-case
+    /// greetings may be indistinguishable without audio or game semantics.
+    private func looksLikeSceneLabel(_ raw: String) -> Bool {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = text.split(whereSeparator: { $0.isWhitespace })
+        guard !words.isEmpty else { return true }
+        // Natural utterances with punctuation should not be discarded.
+        if text.contains(where: { ".!?,:;…".contains($0) }) { return false }
+
+        let spokenSingleWords: Set<String> = [
+            "yes", "no", "yeah", "yep", "nope", "hey", "hi", "hello",
+            "wait", "stop", "help", "go", "run", "thanks", "sorry",
+            "please", "okay", "ok", "what", "why", "who", "where",
+            "shit", "damn", "right", "fine", "sure", "come", "look"
+        ]
+        let spokenShortPhrases: Set<String> = [
+            "thank you", "good morning", "good night", "come on",
+            "watch out", "get out", "oh no", "all right", "let's go"
+        ]
+        let normalized = text.lowercased()
+        if words.count == 1 {
+            return !spokenSingleWords.contains(normalized)
+        }
+        if spokenShortPhrases.contains(normalized) { return false }
+        guard words.count <= 3 else { return false }
+
+        // "Vapid Dominator", "Karin Futo", "FORD MUSTANG" etc. are much
+        // likelier to be a name than a subtitle in normal sentence case.
+        let titleOrCaps = words.allSatisfy { word in
+            let letters = word.filter { $0.isLetter }
+            guard let first = letters.first, first.isUppercase else { return false }
+            return letters.dropFirst().allSatisfy { $0.isLowercase } ||
+                letters.allSatisfy { $0.isUppercase }
+        }
+        return titleOrCaps
     }
 
     /// Conservative, optional filter for many uppercase short menu labels.
