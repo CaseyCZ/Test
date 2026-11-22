@@ -27,6 +27,25 @@ final class CaptionAppModel: ObservableObject {
     @Published var lastCzech = ""
     @Published var frameCount = 0
     @Published var isRunning = false
+    @Published var ocrMode: OCRMode = OCRMode(
+        rawValue: UserDefaults.standard.string(forKey: "ocrMode") ?? ""
+    ) ?? .classic {
+        didSet { UserDefaults.standard.set(ocrMode.rawValue, forKey: "ocrMode") }
+    }
+    @Published var expandOnEmpty = UserDefaults.standard.bool(forKey: "expandOnEmpty") {
+        didSet { UserDefaults.standard.set(expandOnEmpty, forKey: "expandOnEmpty") }
+    }
+    @Published var subtitleDuration: Double =
+        (UserDefaults.standard.object(forKey: "subtitleDuration") as? Double) ?? 6 {
+        didSet { UserDefaults.standard.set(subtitleDuration, forKey: "subtitleDuration") }
+    }
+    @Published var skipOldTranslations = UserDefaults.standard.bool(forKey: "skipOldTranslations") {
+        didSet { UserDefaults.standard.set(skipOldTranslations, forKey: "skipOldTranslations") }
+    }
+    @Published var maxTranslationAge: Double =
+        (UserDefaults.standard.object(forKey: "maxTranslationAge") as? Double) ?? 5 {
+        didSet { UserDefaults.standard.set(maxTranslationAge, forKey: "maxTranslationAge") }
+    }
     @Published var subtitleRegion: SubtitleRegion = SubtitleRegion(
         rawValue: UserDefaults.standard.string(forKey: "subtitleRegion") ?? ""
     ) ?? .center {
@@ -106,12 +125,26 @@ final class CaptionAppModel: ObservableObject {
     }
     @Published var lastChoices = ""
     @Published var logLines: [String] = []
+    @Published var gameProfiles: [GameSubtitleProfile] = {
+        guard let data = UserDefaults.standard.data(forKey: "gameProfiles"),
+              let saved = try? JSONDecoder().decode([GameSubtitleProfile].self, from: data)
+        else { return [] }
+        return saved
+    }() {
+        didSet {
+            if let data = try? JSONEncoder().encode(gameProfiles) {
+                UserDefaults.standard.set(data, forKey: "gameProfiles")
+            }
+        }
+    }
 
     let tv = PlayCaptionTV()
     let xbox = XboxAuthorization()
     private let pipeline = CaptionPipeline()
     private var remotePlay: XboxRemotePlay?
     private var processingChoices = false
+    private var processingOCR = false
+    private var sessionRevision = 0
 
     init() {
         tv.onPairingData = { [weak self] fields in
@@ -124,6 +157,67 @@ final class CaptionAppModel: ObservableObject {
         }
     }
 
+    func saveGameProfile(named rawName: String) {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let existingIndex = gameProfiles.firstIndex {
+            $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }
+        let profile = GameSubtitleProfile(
+            id: existingIndex.map { gameProfiles[$0].id } ?? UUID(),
+            name: name,
+            region: subtitleRegion.rawValue,
+            manualOCR: manualOCR,
+            manualOCRLocked: manualOCRLocked,
+            manualOCRBox: manualOCRBox,
+            filterMenuText: filterMenuText,
+            ocrMode: ocrMode.rawValue,
+            expandOnEmpty: expandOnEmpty,
+            outputX: outputX,
+            outputBottom: outputBottom,
+            outputWidth: outputWidth,
+            outputFont: outputFont,
+            outputLocked: outputLocked,
+            choicesEnabled: choicesEnabled,
+            choicesTextMode: choicesTextMode,
+            choicesArea: choicesArea,
+            choicesLocked: choicesLocked,
+            subtitleDuration: subtitleDuration,
+            skipOldTranslations: skipOldTranslations,
+            maxTranslationAge: maxTranslationAge
+        )
+        if let existingIndex {
+            gameProfiles[existingIndex] = profile
+        } else {
+            gameProfiles.append(profile)
+        }
+        write("Profil uložen: \(name)")
+    }
+
+    func applyGameProfile(_ profile: GameSubtitleProfile) {
+        guard !isRunning else { return }
+        subtitleRegion = SubtitleRegion(rawValue: profile.region) ?? .center
+        manualOCR = profile.manualOCR
+        manualOCRLocked = profile.manualOCRLocked
+        manualOCRBox = profile.manualOCRBox
+        filterMenuText = profile.filterMenuText
+        ocrMode = OCRMode(rawValue: profile.ocrMode) ?? .classic
+        expandOnEmpty = profile.expandOnEmpty
+        outputX = profile.outputX
+        outputBottom = profile.outputBottom
+        outputWidth = profile.outputWidth
+        outputFont = profile.outputFont
+        outputLocked = profile.outputLocked
+        choicesArea = profile.choicesArea
+        choicesTextMode = profile.choicesTextMode
+        choicesLocked = profile.choicesLocked
+        choicesEnabled = profile.choicesEnabled
+        subtitleDuration = profile.subtitleDuration
+        skipOldTranslations = profile.skipOldTranslations
+        maxTranslationAge = profile.maxTranslationAge
+        write("Načten profil: \(profile.name)")
+    }
+
     func write(_ message: String) {
         logLines.append("\(Date().formatted(date: .omitted, time: .standard))  \(message)")
         if logLines.count > 250 { logLines.removeFirst(logLines.count - 250) }
@@ -132,17 +226,27 @@ final class CaptionAppModel: ObservableObject {
     func start(_ console: XboxConsole) {
         guard !isRunning else { return }
         isRunning = true
+        sessionRevision += 1
+        let currentSession = sessionRevision
+        processingOCR = false
+        Task { await pipeline.resetDialogue() }
         UIApplication.shared.isIdleTimerDisabled = true
         status = "Navazuji Xbox Remote Play…"
         write("Start Remote Play: \(console.name)")
-        let play = XboxRemotePlay(authorization: xbox)
+        let play = XboxRemotePlay(authorization: xbox,
+                                  minimumFrameInterval: ocrMode.minimumFrameInterval)
         remotePlay = play
-        play.onStatus = { [weak self] s in
-            Task { @MainActor in self?.status = s; self?.write(s) }
+        play.onStatus = { [weak self] status in
+            Task { @MainActor in
+                guard let self, self.sessionRevision == currentSession else { return }
+                self.status = status
+                self.write(status)
+            }
         }
         play.onFrame = { [weak self] buffer in
             Task { @MainActor in
-                guard let self, self.isRunning else { return }
+                guard let self, self.isRunning,
+                      self.sessionRevision == currentSession else { return }
                 self.frameCount += 1
 
                 // Choices use an independent region and may be translated while
@@ -172,18 +276,40 @@ final class CaptionAppModel: ObservableObject {
                     }
                 }
 
-                if let english = await self.pipeline.recognize(
-                    buffer, region: self.subtitleRegion,
-                    manualArea: self.manualOCR ? self.manualOCRBox : nil,
-                    filterMenus: self.filterMenuText
-                ) {
-                    self.lastEnglish = english
-                    self.write("OCR: \(english)")
-                    let czech = await self.pipeline.translate(english)
-                    guard self.isRunning else { return }
-                    self.lastCzech = czech
-                    self.tv.sendSubtitle(czech, duration: 6_000)
-                    self.write("CZ: \(czech)")
+                // Keep recognition independent of network translation: a slow
+                // request must not block OCR of the next short street dialogue.
+                if !self.processingOCR {
+                    self.processingOCR = true
+                    let reading = await self.pipeline.recognize(
+                        buffer, region: self.subtitleRegion,
+                        manualArea: self.manualOCR ? self.manualOCRBox : nil,
+                        filterMenus: self.filterMenuText,
+                        mode: self.ocrMode,
+                        expandOnEmpty: self.expandOnEmpty
+                    )
+                    self.processingOCR = false
+                    if let reading, self.isRunning,
+                       self.sessionRevision == currentSession {
+                        self.lastEnglish = reading.english
+                        self.write("OCR: \(reading.english)")
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            let czech = await self.pipeline.translate(reading.english)
+                            let isLatest = await self.pipeline.isCurrent(revision: reading.revision)
+                            guard self.isRunning,
+                                  self.sessionRevision == currentSession,
+                                  isLatest else { return }
+                            if self.skipOldTranslations &&
+                               Date().timeIntervalSince(reading.capturedAt) > self.maxTranslationAge {
+                                self.write("Příliš starý překlad byl přeskočen.")
+                                return
+                            }
+                            self.lastCzech = czech
+                            self.tv.sendSubtitle(czech,
+                                                 duration: Int(self.subtitleDuration * 1000))
+                            self.write("CZ: \(czech)")
+                        }
+                    }
                 }
             }
         }
@@ -198,6 +324,8 @@ final class CaptionAppModel: ObservableObject {
     }
 
     func stop() {
+        sessionRevision += 1
+        processingOCR = false
         remotePlay?.stop()
         remotePlay = nil
         isRunning = false
@@ -209,12 +337,13 @@ final class CaptionAppModel: ObservableObject {
     }
 
     func shareLogs() -> String {
-        (["PlayCaption iOS 0.1.0", "Stav: \(status)"] + logLines).joined(separator: "\n")
+        (["PlayCaption iOS 0.2.0", "Stav: \(status)"] + logLines).joined(separator: "\n")
     }
 }
 
 struct ContentView: View {
     @EnvironmentObject var model: CaptionAppModel
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -235,31 +364,6 @@ struct ContentView: View {
                         XboxRemotePlayView(auth: model.xbox)
                     }
 
-                    DisclosureGroup {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ScrollView {
-                                Text(model.logLines.suffix(40).joined(separator: "\n"))
-                                    .font(.caption2.monospaced())
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .frame(height: 150)
-                            ShareLink(item: model.shareLogs()) {
-                                Label("Sdílet diagnostiku", systemImage: "square.and.arrow.up")
-                            }
-                            Text("Log nezahrnuje přihlašovací tokeny ani kódy.")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 10)
-                    } label: {
-                        Label("Diagnostika", systemImage: "waveform.path.ecg")
-                            .font(.headline)
-                    }
-                    .tint(.secondary)
-                    .padding(16)
-                    .background(Color.white.opacity(0.055),
-                                in: RoundedRectangle(cornerRadius: 20))
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -267,6 +371,19 @@ struct ContentView: View {
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("PlayCaption iOS")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                    }
+                    .accessibilityLabel("Nastavení")
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                PlayCaptionSettingsView(model: model)
+            }
         }
     }
 
@@ -330,7 +447,6 @@ struct XboxRemotePlayView: View {
     @EnvironmentObject var model: CaptionAppModel
     @ObservedObject var auth: XboxAuthorization
     @AppStorage("selectedXboxServerID") private var selectedXboxServerID = ""
-    @State private var showSubtitleSettings = false
 
     // Never silently choose a console; people may own several Xboxes.
     // The same server ID remains selected after reloading the account.
@@ -407,19 +523,6 @@ struct XboxRemotePlayView: View {
                     .font(.caption).foregroundStyle(.green)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Rozpoznávání titulků")
-                    .font(.subheadline.bold())
-                Text(model.manualOCR ? "Ručně vymezená oblast" : "Automatické čtení spodní části")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button {
-                    showSubtitleSettings = true
-                } label: {
-                    Label("Nastavit oblast čtení a polohu titulků", systemImage: "rectangle.dashed")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-            }
             Text(model.status).foregroundStyle(.secondary)
             HStack {
                 Button("Spustit překlad") {
@@ -444,9 +547,6 @@ struct XboxRemotePlayView: View {
             if auth.signedIn && auth.consoles.isEmpty {
                 await auth.refreshConsoles()
             }
-        }
-        .sheet(isPresented: $showSubtitleSettings) {
-            SubtitleSettingsView(model: model)
         }
     }
 }

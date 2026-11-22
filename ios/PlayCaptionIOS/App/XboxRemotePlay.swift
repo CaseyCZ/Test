@@ -15,7 +15,7 @@ final class XboxRemotePlay: NSObject {
     private var peer: RTCPeerConnection?
     private var videoTrack: RTCVideoTrack?
     private var channels: [String: RTCDataChannel] = [:]
-    private let videoSink = XboxVideoSink()
+    private let videoSink: XboxVideoSink
     private let lock = NSLock()
     private var candidates: [RTCIceCandidate] = []
     private var ended = false
@@ -24,8 +24,9 @@ final class XboxRemotePlay: NSObject {
     private var heartbeat: Task<Void, Never>?
     private var keepalive: Task<Void, Never>?
 
-    init(authorization: XboxAuthorization) {
+    init(authorization: XboxAuthorization, minimumFrameInterval: TimeInterval = 0.55) {
         self.authorization = authorization
+        self.videoSink = XboxVideoSink(minimumFrameInterval: minimumFrameInterval)
         super.init()
         videoSink.onPixelBuffer = { [weak self] buffer in
             guard let self else { return }
@@ -358,7 +359,13 @@ final class XboxRemotePlay: NSObject {
 
 private final class XboxVideoSink: NSObject, RTCVideoRenderer {
     var onPixelBuffer: ((CVPixelBuffer) -> Void)?
+    private let minimumFrameInterval: TimeInterval
     private var lastSent: TimeInterval = 0
+
+    init(minimumFrameInterval: TimeInterval) {
+        self.minimumFrameInterval = minimumFrameInterval
+        super.init()
+    }
 
     func setSize(_ size: CGSize) {}
 
@@ -366,7 +373,7 @@ private final class XboxVideoSink: NSObject, RTCVideoRenderer {
         guard let frame,
               let buffer = frame.buffer as? RTCCVPixelBuffer else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastSent > 0.55 else { return }
+        guard now - lastSent > minimumFrameInterval else { return }
         lastSent = now
         onPixelBuffer?(buffer.pixelBuffer)
     }
