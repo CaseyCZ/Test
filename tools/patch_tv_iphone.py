@@ -86,7 +86,7 @@ def main() -> None:
             val overlays = if (OverlayService.pripravena) "připraven" else "nepřipraven"
             val hidden = if (instance.skrytyMimoVstup) " / mimo TV vstup" else ""
             return "UDP 41989 · zpráva před $age\\n" +
-                "Přijaté titulky: \${p.pocetTitulku} · z \${p.posledniIP.ifEmpty { "—" }}\\n" +
+                "Přijaté titulky: ${p.pocetTitulku} · z ${p.posledniIP.ifEmpty { "—" }}\\n" +
                 "Překryv: $overlays$hidden"
         }
 
