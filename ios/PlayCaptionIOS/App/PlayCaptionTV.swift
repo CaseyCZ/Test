@@ -453,7 +453,7 @@ final class PlayCaptionTV: ObservableObject {
         let y = (prefs.object(forKey: "outputBottom") as? Double) ?? 0.93
         let width = (prefs.object(forKey: "outputWidth") as? Double) ?? 0.62
         let font = (prefs.object(forKey: "outputFont") as? Double) ?? 1.0
-        let layout = "\t\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
+        let layout = "\(x)\t\(y)\t\(width)\t\(font)\t\(preview ? 1 : 0)"
         let payload = Data("PCT1\t\(sequence)\t\(max(0, duration))\t\(clean)\t\(layout)".utf8)
         if !sendSignedSubtitle(payload, to: target, reportStatus: true) {
             sendDatagram(payload, to: target, reportStatus: true)
