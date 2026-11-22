@@ -184,7 +184,7 @@ actor CaptionPipeline {
             } else {
                 selected = candidates
             }
-            let text = selected.map(\.text).joined(separator: " ")
+            let text = selected.map { $0.text }.joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard text.count >= (mode == .street ? 2 : 4),
                   text.filter({ $0.isLetter }).count >= minLetters else {
