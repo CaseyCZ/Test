@@ -270,6 +270,7 @@ struct SubtitleSettingsView: View {
                     Text("Text (dopisy, SMS)").tag(true)
                 }
                 .pickerStyle(.segmented)
+                gameTextFontControl
                 Toggle("Zamknout žlutý rámeček", isOn: $model.choicesLocked)
                 if !model.choicesLocked {
                     Text("Šířka: \(Int(model.choicesArea.width * 100)) %")
@@ -286,7 +287,8 @@ struct SubtitleSettingsView: View {
                 Button("Ukázat žlutý rámeček na TCL") {
                     model.tv.sendChoices([], area: model.choicesArea,
                                          asText: model.choicesTextMode, showFrame: true,
-                                         outputArea: model.choicesOutputArea)
+                                         outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
                 }
                 .buttonStyle(.bordered)
                 .tint(.yellow)
@@ -333,6 +335,7 @@ struct SubtitleSettingsView: View {
                         set: { updateChoicesOutputSize(width: nil, height: CGFloat($0)) }
                     ), in: 0.08...0.40)
                 }
+                gameTextFontControl
                 Button("Ukázat oranžový překlad na TCL") {
                     showOnTV()
                 }
@@ -348,6 +351,25 @@ struct SubtitleSettingsView: View {
                 Text("Nejdříve zapni překlad herních textů ve žluté oblasti.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Both yellow input and orange output panels expose the same independent
+    /// text scale because this controls the Czech rendering, not OCR glyphs.
+    private var gameTextFontControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Velikost písma českého překladu: \(Int(model.choicesOutputFont * 100)) %")
+            Slider(value: Binding(
+                get: { model.choicesOutputFont },
+                set: { newValue in
+                    model.choicesOutputFont = newValue
+                    scheduleOrangeRelocation()
+                }
+            ), in: 0.60...2.00, step: 0.05)
+                .tint(.orange)
+            Text("Mění jen překlad herních textů a voleb. Klasické titulky zůstávají beze změny.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -404,7 +426,8 @@ struct SubtitleSettingsView: View {
             guard model.choicesEnabled else { return }
             model.tv.sendChoices([], area: model.choicesArea,
                                  asText: model.choicesTextMode, showFrame: true,
-                                 outputArea: model.choicesOutputArea)
+                                 outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
         } else {
             guard model.choicesEnabled else { return }
             // During a game, resend only the current real translation at its
@@ -417,13 +440,15 @@ struct SubtitleSettingsView: View {
             orangePreviewTask?.cancel()
             model.tv.sendChoices(["Ukázka českého překladu"],
                                  area: model.choicesArea, asText: true,
-                                 showFrame: false, outputArea: model.choicesOutputArea)
+                                 showFrame: false, outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
             orangePreviewTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(6))
                 guard !Task.isCancelled, !model.isRunning else { return }
                 model.tv.sendChoices([], area: model.choicesArea,
                                      asText: model.choicesTextMode,
-                                     outputArea: model.choicesOutputArea)
+                                     outputArea: model.choicesOutputArea,
+                                 outputFont: model.choicesOutputFont)
             }
         }
     }
