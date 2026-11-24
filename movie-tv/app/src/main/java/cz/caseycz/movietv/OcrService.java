@@ -17,15 +17,17 @@ public class OcrService extends Service {
  private final Handler main=new Handler(Looper.getMainLooper());
  private MediaProjection projection; private VirtualDisplay display; private ImageReader reader;
  private TextRecognizer recognizer; private Translator translator; private WindowManager wm; private TextView overlay;
- private boolean busy,closed; private long lastFrame,lastText; private String previous=""; private SubtitleSettings settings; private final TranslationCache cache=new TranslationCache(); private long darkSince; private boolean darkWarning;
- private final Runnable expiry=new Runnable(){public void run(){if(closed)return;if(!darkWarning&&SystemClock.elapsedRealtime()-lastText>3500){previous="";show("");} main.postDelayed(this,500);}};
+ private boolean busy,closed; private long lastImageAt; private long lastFrame,lastText; private String previous=""; private SubtitleSettings settings; private final TranslationCache cache=new TranslationCache(); private long darkSince; private boolean darkWarning;
+ private final Runnable expiry=new Runnable(){public void run(){if(closed)return;if(lastImageAt>0&&SystemClock.elapsedRealtime()-lastImageAt>10000){darkWarning=true;previous="";show("Snímání obrazovky není dostupné");}if(!darkWarning&&SystemClock.elapsedRealtime()-lastText>3500){previous="";show("");} main.postDelayed(this,500);}};
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent i,int flags,int id){
+  if(i!=null&&"stop".equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
   if(i==null||projection!=null)return START_NOT_STICKY;
   NotificationManager nm=getSystemService(NotificationManager.class);
   nm.createNotificationChannel(new NotificationChannel("ocr","Překlad titulků",NotificationManager.IMPORTANCE_LOW));
   PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
-  startForeground(1,new Notification.Builder(this,"ocr").setSmallIcon(android.R.drawable.ic_menu_view).setContentTitle("OCR překlad aktivní").setContentIntent(open).build());
+  PendingIntent stop=PendingIntent.getService(this,11,new Intent(this,OcrService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
+  startForeground(1,new Notification.Builder(this,"ocr").setSmallIcon(android.R.drawable.ic_menu_view).setContentTitle("OCR překlad aktivní").setContentIntent(open).addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,"Zastavit",stop).build()).setOngoing(true).build());
   try{
    settings=new SubtitleSettings(this);
    wm=getSystemService(WindowManager.class);
@@ -47,6 +49,7 @@ public class OcrService extends Service {
   int w=m.widthPixels,h=m.heightPixels;
   if(w>1920){h=Math.max(1,h*1920/w);w=1920;}
   final int captureWidth=w,captureHeight=h;
+  lastImageAt=SystemClock.elapsedRealtime();
   reader=ImageReader.newInstance(w,h,PixelFormat.RGBA_8888,2);
   reader.setOnImageAvailableListener(r->frame(r,captureWidth,captureHeight),main);
   display=projection.createVirtualDisplay("MovieOCR",w,h,m.densityDpi,DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader.getSurface(),null,main);
@@ -54,6 +57,7 @@ public class OcrService extends Service {
  private void frame(ImageReader r,int w,int h){
   Bitmap crop=null;
   try(Image image=r.acquireLatestImage()){
+   if(image!=null)lastImageAt=SystemClock.elapsedRealtime();
    if(image==null||closed||busy||SystemClock.elapsedRealtime()-lastFrame<700)return;
    lastFrame=SystemClock.elapsedRealtime();
    Image.Plane p=image.getPlanes()[0];int padded=p.getRowStride()/p.getPixelStride();
@@ -69,7 +73,7 @@ public class OcrService extends Service {
   }
   darkSince=0;if(darkWarning){darkWarning=false;show("");}
   final Bitmap input=crop;busy=true;
-  recognizer.process(InputImage.fromBitmap(input,0)).addOnCompleteListener(task->{
+  try{recognizer.process(InputImage.fromBitmap(input,0)).addOnCompleteListener(task->{
    input.recycle();if(closed)return;
    if(!task.isSuccessful()){busy=false;return;}
    String source=TranslationCache.normalize(task.getResult().getText());
@@ -78,7 +82,7 @@ public class OcrService extends Service {
    if(source.equals(previous)){busy=false;return;}
    String cached=cache.get(source);if(cached!=null){previous=source;show(cached);busy=false;return;}
    translator.translate(source).addOnCompleteListener(t->{busy=false;if(!closed&&t.isSuccessful()){cache.put(source,t.getResult());previous=source;show(t.getResult());}});
-  });
+  });}catch(RuntimeException e){input.recycle();busy=false;}
  }
  private boolean isDark(Bitmap b){
   for(int y=0;y<b.getHeight();y+=Math.max(1,b.getHeight()/24))
@@ -92,8 +96,8 @@ public class OcrService extends Service {
  @Override public void onDestroy(){
   closed=true;main.removeCallbacksAndMessages(null);
   if(display!=null)display.release();if(reader!=null)reader.close();
-  if(projection!=null)projection.stop();if(recognizer!=null)recognizer.close();if(translator!=null)translator.close();
-  if(overlay!=null&&wm!=null)wm.removeView(overlay);
+  if(projection!=null){MediaProjection old=projection;projection=null;old.stop();}if(recognizer!=null)recognizer.close();if(translator!=null)translator.close();
+  if(overlay!=null&&wm!=null&&overlay.isAttachedToWindow())wm.removeView(overlay);
   super.onDestroy();
  }
 }

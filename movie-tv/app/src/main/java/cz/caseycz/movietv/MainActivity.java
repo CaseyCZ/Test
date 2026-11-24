@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
   setContentView(root); start.requestFocus();
  }
  private void requestCapture(){
+   stopService(new Intent(this,OcrService.class));stopService(new Intent(this,AudioService.class));
    if(!Settings.canDrawOverlays(this)){startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
    if(audio&&checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},43);return;}
    startActivityForResult(getSystemService(MediaProjectionManager.class).createScreenCaptureIntent(),audio?44:42);
@@ -30,9 +31,8 @@ public class MainActivity extends Activity {
  @Override protected void onActivityResult(int request,int result,Intent data){
   super.onActivityResult(request,result,data);
   if((request==42||request==44)&&result==RESULT_OK&&data!=null){
-   stopService(new Intent(this,OcrService.class));stopService(new Intent(this,AudioService.class));
    Intent i=new Intent(this,request==44?AudioService.class:OcrService.class).putExtra("result",result).putExtra("permission",data).putExtra("language",new String[]{"en","de","fr","es"}[language.getSelectedItemPosition()]);
-   startForegroundService(i); moveTaskToBack(true);
-  }
+   try{startForegroundService(i); moveTaskToBack(true);}catch(RuntimeException e){Toast.makeText(this,"Překlad nelze spustit",Toast.LENGTH_LONG).show();}
+  }else if(request==42||request==44){Toast.makeText(this,"Snímání nebylo povoleno",Toast.LENGTH_SHORT).show();}
  }
 }

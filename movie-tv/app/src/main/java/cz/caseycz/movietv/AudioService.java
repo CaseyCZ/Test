@@ -27,10 +27,12 @@ public class AudioService extends Service {
  private long sequence;private final TranslationCache cache=new TranslationCache();private String lastSource="";private long lastSourceAt;
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent i,int flags,int id){
+  if(i!=null&&"stop".equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
   if(i==null||worker!=null||projection!=null)return START_NOT_STICKY;
   NotificationManager nm=getSystemService(NotificationManager.class);
   nm.createNotificationChannel(new NotificationChannel("audio","Překlad zvuku",NotificationManager.IMPORTANCE_LOW));
-  startForeground(2,new Notification.Builder(this,"audio").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Překlad interního zvuku").setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE)).build());
+  PendingIntent stop=PendingIntent.getService(this,12,new Intent(this,AudioService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
+  startForeground(2,new Notification.Builder(this,"audio").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Překlad interního zvuku").setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE)).addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,"Zastavit",stop).build()).setOngoing(true).build());
   try{
    wm=getSystemService(WindowManager.class);SubtitleSettings settings=new SubtitleSettings(this);overlay=new TextView(this);settings.style(overlay);
    WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);settings.place(p,false);wm.addView(overlay,p);
@@ -97,6 +99,6 @@ public class AudioService extends Service {
  private void fail(String message){if(!closed){Toast.makeText(this,message,Toast.LENGTH_LONG).show();stopSelf();}}
  @Override public void onDestroy(){
   closed=true;main.removeCallbacksAndMessages(null);AudioRecord r=record;if(r!=null)try{r.stop();}catch(Exception ignored){}
-  if(worker!=null)worker.interrupt();if(projection!=null)projection.stop();if(translator!=null)translator.close();if(overlay!=null&&wm!=null)wm.removeView(overlay);super.onDestroy();
+  if(worker!=null)worker.interrupt();if(projection!=null){MediaProjection old=projection;projection=null;old.stop();}if(translator!=null)translator.close();if(overlay!=null&&wm!=null&&overlay.isAttachedToWindow())wm.removeView(overlay);super.onDestroy();
  }
 }
