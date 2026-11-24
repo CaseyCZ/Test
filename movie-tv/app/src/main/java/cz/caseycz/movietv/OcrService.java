@@ -17,7 +17,7 @@ public class OcrService extends Service {
  private final Handler main=new Handler(Looper.getMainLooper());
  private MediaProjection projection; private VirtualDisplay display; private ImageReader reader;
  private TextRecognizer recognizer; private Translator translator; private WindowManager wm; private TextView overlay;
- private boolean busy,closed; private long lastFrame,lastText; private String previous=""; private int region;
+ private boolean busy,closed; private long lastFrame,lastText; private String previous=""; private SubtitleSettings settings;
  private final Runnable expiry=new Runnable(){public void run(){if(closed)return;if(SystemClock.elapsedRealtime()-lastText>3500){previous="";show("");} main.postDelayed(this,500);}};
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent i,int flags,int id){
@@ -27,12 +27,12 @@ public class OcrService extends Service {
   PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
   startForeground(1,new Notification.Builder(this,"ocr").setSmallIcon(android.R.drawable.ic_menu_view).setContentTitle("OCR překlad aktivní").setContentIntent(open).build());
   try{
-   region=i.getIntExtra("region",0);
+   settings=new SubtitleSettings(this);
    wm=getSystemService(WindowManager.class);
-   overlay=new TextView(this); overlay.setTextSize(24);overlay.setTextColor(Color.WHITE);overlay.setGravity(Gravity.CENTER);overlay.setPadding(20,8,20,8);overlay.setBackgroundColor(0xcc000000);
-   WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);
+   overlay=new TextView(this); settings.style(overlay);
+   WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT);
    // Output is opposite the input region to avoid reading our own translation.
-   p.gravity=(region==2?Gravity.BOTTOM:Gravity.TOP)|Gravity.CENTER_HORIZONTAL;p.y=40;wm.addView(overlay,p);
+   settings.place(p,true);wm.addView(overlay,p);
    show("Stahuji jazykový model…");
    recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
    translator=Translation.getClient(new TranslatorOptions.Builder().setSourceLanguage(i.getStringExtra("language")).setTargetLanguage(TranslateLanguage.CZECH).build());
@@ -56,7 +56,7 @@ public class OcrService extends Service {
    lastFrame=SystemClock.elapsedRealtime();
    Image.Plane p=image.getPlanes()[0];int padded=p.getRowStride()/p.getPixelStride();
    Bitmap full=Bitmap.createBitmap(padded,h,Bitmap.Config.ARGB_8888);
-   try{full.copyPixelsFromBuffer(p.getBuffer());int height=h*(region==1?40:25)/100;crop=Bitmap.createBitmap(full,0,region==2?0:h-height,w,height);}finally{full.recycle();}
+   try{full.copyPixelsFromBuffer(p.getBuffer());Rect area=settings.region(w,h);crop=Bitmap.createBitmap(full,area.left,area.top,area.width(),area.height());if(crop==full)crop=full.copy(Bitmap.Config.ARGB_8888,false);}finally{full.recycle();}
   }catch(Exception e){return;}
   final Bitmap input=crop;busy=true;
   recognizer.process(InputImage.fromBitmap(input,0)).addOnCompleteListener(task->{

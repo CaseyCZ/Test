@@ -32,8 +32,8 @@ public class AudioService extends Service {
   nm.createNotificationChannel(new NotificationChannel("audio","Překlad zvuku",NotificationManager.IMPORTANCE_LOW));
   startForeground(2,new Notification.Builder(this,"audio").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Překlad interního zvuku").setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE)).build());
   try{
-   wm=getSystemService(WindowManager.class);overlay=new TextView(this);overlay.setTextSize(24);overlay.setTextColor(Color.WHITE);overlay.setBackgroundColor(0xcc000000);overlay.setGravity(Gravity.CENTER);overlay.setPadding(20,8,20,8);
-   WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);p.gravity=Gravity.BOTTOM;p.y=40;wm.addView(overlay,p);
+   wm=getSystemService(WindowManager.class);SubtitleSettings settings=new SubtitleSettings(this);overlay=new TextView(this);settings.style(overlay);
+   WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);settings.place(p,false);wm.addView(overlay,p);
    projection=getSystemService(MediaProjectionManager.class).getMediaProjection(i.getIntExtra("result",0),(Intent)i.getParcelableExtra("permission"));
    projection.registerCallback(new MediaProjection.Callback(){@Override public void onStop(){stopSelf();}},main);
    translator=Translation.getClient(new TranslatorOptions.Builder().setSourceLanguage(TranslateLanguage.ENGLISH).setTargetLanguage(TranslateLanguage.CZECH).build());

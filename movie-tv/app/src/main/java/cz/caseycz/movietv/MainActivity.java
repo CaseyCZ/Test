@@ -8,13 +8,13 @@ import android.provider.Settings;
 import android.widget.*;
 
 public class MainActivity extends Activity {
- private Spinner region, language; private boolean audio;
+ private Spinner language; private boolean audio;
  @Override public void onCreate(Bundle state) {
   super.onCreate(state);
   LinearLayout root=new LinearLayout(this); root.setOrientation(1); root.setPadding(48,32,48,32);
   TextView title=new TextView(this); title.setText("Překlad filmů a seriálů"); title.setTextSize(28); root.addView(title);
   TextView info=new TextView(this); info.setText("OCR: překlad viditelných titulků do češtiny. Chráněný obraz nemusí být dostupný. Při prvním spuštění se stáhne jazykový model."); root.addView(info);
-  region=new Spinner(this); region.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Spodních 25 %","Spodních 40 %","Horních 25 %"})); root.addView(region);
+  Button settings=new Button(this);settings.setText("Nastavení titulků a oblasti OCR");root.addView(settings);settings.setOnClickListener(v->startActivity(new Intent(this,SettingsActivity.class)));
   language=new Spinner(this); language.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"English","Deutsch","Français","Español"})); root.addView(language);
   Button start=new Button(this); start.setText("Spustit OCR překlad"); root.addView(start); start.setOnClickListener(v->{audio=false; requestCapture();});
   Button sound=new Button(this); sound.setText("Spustit AUDIO překlad (angličtina)");root.addView(sound);sound.setOnClickListener(v->{audio=true;requestCapture();});
@@ -31,7 +31,7 @@ public class MainActivity extends Activity {
   super.onActivityResult(request,result,data);
   if((request==42||request==44)&&result==RESULT_OK&&data!=null){
    stopService(new Intent(this,OcrService.class));stopService(new Intent(this,AudioService.class));
-   Intent i=new Intent(this,request==44?AudioService.class:OcrService.class).putExtra("result",result).putExtra("permission",data).putExtra("region",region.getSelectedItemPosition()).putExtra("language",new String[]{"en","de","fr","es"}[language.getSelectedItemPosition()]);
+   Intent i=new Intent(this,request==44?AudioService.class:OcrService.class).putExtra("result",result).putExtra("permission",data).putExtra("language",new String[]{"en","de","fr","es"}[language.getSelectedItemPosition()]);
    startForegroundService(i); moveTaskToBack(true);
   }
  }
