@@ -1,0 +1,39 @@
+name: Publish Movie TV 0.4 test
+on:
+  push:
+    branches: [feature/tv-movie-translation]
+    paths: ['.github/workflows/publish-movie-tv-04.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: movie-tv-04-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/feature/tv-movie-translation'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download verified build artifacts and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          RUN=45362876591
+          SHA=45cc473a528ac5bd49c4baf99b60b1729e0af17b
+          TAG=v0.4-movie-tv-test
+          test "$(gh run view "$RUN" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$RUN" --json headSha --jq .headSha)" = "$SHA"
+          mkdir -p dist
+          gh run download "$RUN" -n Movie-TV-ARM64 -n Movie-TV-ARM32 -D dist
+          ARM64=$(find dist -name 'Movie-TV-0.4-test-arm64-v8a.apk' -type f)
+          ARM32=$(find dist -name 'Movie-TV-0.4-test-armeabi-v7a.apk' -type f)
+          test -s "$ARM64"
+          test -s "$ARM32"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite."
+            exit 1
+          fi
+          gh release create "$TAG" "$ARM64" "$ARM32" --target "$SHA" --prerelease --latest=false --title "Movie TV Translator 0.4 TEST" --notes "Standalone Android TV 10+ experiment. OCR subtitle translation and English audio-to-Czech translation. Separate ARM64 and ARM32 APKs. First launch downloads language models. Netflix and other protected playback compatibility is not verified. No changes to GameLingo or Master. Built from verified Actions run 45362876591."
