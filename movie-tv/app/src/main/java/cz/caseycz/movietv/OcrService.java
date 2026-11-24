@@ -17,8 +17,8 @@ public class OcrService extends Service {
  private final Handler main=new Handler(Looper.getMainLooper());
  private MediaProjection projection; private VirtualDisplay display; private ImageReader reader;
  private TextRecognizer recognizer; private Translator translator; private WindowManager wm; private TextView overlay;
- private boolean busy,closed; private long lastFrame,lastText; private String previous=""; private SubtitleSettings settings;
- private final Runnable expiry=new Runnable(){public void run(){if(closed)return;if(SystemClock.elapsedRealtime()-lastText>3500){previous="";show("");} main.postDelayed(this,500);}};
+ private boolean busy,closed; private long lastFrame,lastText; private String previous=""; private SubtitleSettings settings; private final TranslationCache cache=new TranslationCache(); private long darkSince; private boolean darkWarning;
+ private final Runnable expiry=new Runnable(){public void run(){if(closed)return;if(!darkWarning&&SystemClock.elapsedRealtime()-lastText>3500){previous="";show("");} main.postDelayed(this,500);}};
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent i,int flags,int id){
   if(i==null||projection!=null)return START_NOT_STICKY;
@@ -45,8 +45,10 @@ public class OcrService extends Service {
  private void begin(){
   android.util.DisplayMetrics m=new android.util.DisplayMetrics();wm.getDefaultDisplay().getRealMetrics(m);
   int w=m.widthPixels,h=m.heightPixels;
+  if(w>1920){h=Math.max(1,h*1920/w);w=1920;}
+  final int captureWidth=w,captureHeight=h;
   reader=ImageReader.newInstance(w,h,PixelFormat.RGBA_8888,2);
-  reader.setOnImageAvailableListener(r->frame(r,w,h),main);
+  reader.setOnImageAvailableListener(r->frame(r,captureWidth,captureHeight),main);
   display=projection.createVirtualDisplay("MovieOCR",w,h,m.densityDpi,DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader.getSurface(),null,main);
  }
  private void frame(ImageReader r,int w,int h){
@@ -58,16 +60,32 @@ public class OcrService extends Service {
    Bitmap full=Bitmap.createBitmap(padded,h,Bitmap.Config.ARGB_8888);
    try{full.copyPixelsFromBuffer(p.getBuffer());Rect area=settings.region(w,h);crop=Bitmap.createBitmap(full,area.left,area.top,area.width(),area.height());if(crop==full)crop=full.copy(Bitmap.Config.ARGB_8888,false);}finally{full.recycle();}
   }catch(Exception e){return;}
+  if(crop==null)return;
+  long now=SystemClock.elapsedRealtime();
+  if(isDark(crop)){
+   crop.recycle();if(darkSince==0)darkSince=now;
+   if(now-darkSince>8000&&!darkWarning){darkWarning=true;previous="";show("Oblast OCR je tmavá nebo není dostupná");}
+   return;
+  }
+  darkSince=0;if(darkWarning){darkWarning=false;show("");}
   final Bitmap input=crop;busy=true;
   recognizer.process(InputImage.fromBitmap(input,0)).addOnCompleteListener(task->{
    input.recycle();if(closed)return;
    if(!task.isSuccessful()){busy=false;return;}
-   String source=task.getResult().getText().trim().replaceAll("\\s+"," ");
+   String source=TranslationCache.normalize(task.getResult().getText());
    if(source.isEmpty()){busy=false;return;}
    lastText=SystemClock.elapsedRealtime();
    if(source.equals(previous)){busy=false;return;}
-   translator.translate(source).addOnCompleteListener(t->{busy=false;if(!closed&&t.isSuccessful()){previous=source;show(t.getResult());}});
+   String cached=cache.get(source);if(cached!=null){previous=source;show(cached);busy=false;return;}
+   translator.translate(source).addOnCompleteListener(t->{busy=false;if(!closed&&t.isSuccessful()){cache.put(source,t.getResult());previous=source;show(t.getResult());}});
   });
+ }
+ private boolean isDark(Bitmap b){
+  for(int y=0;y<b.getHeight();y+=Math.max(1,b.getHeight()/24))
+   for(int x=0;x<b.getWidth();x+=Math.max(1,b.getWidth()/48)){
+    int p=b.getPixel(x,y);if(Color.red(p)>16||Color.green(p)>16||Color.blue(p)>16)return false;
+   }
+  return true;
  }
  private void show(String text){if(overlay!=null){overlay.setText(text);overlay.setVisibility(text.isEmpty()?View.GONE:View.VISIBLE);}}
  private void fail(String text){if(!closed){Toast.makeText(this,text,Toast.LENGTH_LONG).show();stopSelf();}}

@@ -24,7 +24,7 @@ public class AudioService extends Service {
  private WindowManager wm;
  private TextView overlay;
  private Thread worker;
- private long sequence;
+ private long sequence;private final TranslationCache cache=new TranslationCache();private String lastSource="";private long lastSourceAt;
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent i,int flags,int id){
   if(i==null||worker!=null||projection!=null)return START_NOT_STICKY;
@@ -83,8 +83,15 @@ public class AudioService extends Service {
   finally{if(local!=null){try{local.stop();}catch(Exception ignored){}local.release();}record=null;}
  }
  private void translate(String source){
-  if(closed)return;long current=++sequence;
-  translator.translate(source).addOnSuccessListener(text->{if(!closed&&current==sequence){show(text);main.postDelayed(()->{if(!closed&&current==sequence)show("");},4500);}});
+  if(closed)return;
+  String normalized=TranslationCache.normalize(source);long now=SystemClock.elapsedRealtime();
+  if(normalized.isEmpty()||(normalized.equals(lastSource)&&now-lastSourceAt<2500))return;
+  lastSource=normalized;lastSourceAt=now;long current=++sequence;
+  String cached=cache.get(normalized);if(cached!=null){displayTranslation(cached,current);return;}
+  translator.translate(normalized).addOnSuccessListener(text->{if(!closed){cache.put(normalized,text);displayTranslation(text,current);}});
+ }
+ private void displayTranslation(String text,long current){
+  if(!closed&&current==sequence){show(text);main.postDelayed(()->{if(!closed&&current==sequence)show("");},4500);}
  }
  private void show(String text){if(!closed&&overlay!=null){overlay.setText(text);overlay.setVisibility(text.isEmpty()?View.GONE:View.VISIBLE);}}
  private void fail(String message){if(!closed){Toast.makeText(this,message,Toast.LENGTH_LONG).show();stopSelf();}}
