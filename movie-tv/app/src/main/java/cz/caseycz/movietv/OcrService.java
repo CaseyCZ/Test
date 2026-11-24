@@ -1,0 +1,81 @@
+package cz.caseycz.movietv;
+import android.app.*;
+import android.content.*;
+import android.graphics.*;
+import android.hardware.display.*;
+import android.media.*;
+import android.media.projection.*;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.*;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
+import com.google.mlkit.nl.translate.*;
+
+public class OcrService extends Service {
+ private final Handler main=new Handler(Looper.getMainLooper());
+ private MediaProjection projection; private VirtualDisplay display; private ImageReader reader;
+ private TextRecognizer recognizer; private Translator translator; private WindowManager wm; private TextView overlay;
+ private boolean busy,closed; private long lastFrame,lastText; private String previous=""; private int region;
+ private final Runnable expiry=new Runnable(){public void run(){if(closed)return;if(SystemClock.elapsedRealtime()-lastText>3500){previous="";show("");} main.postDelayed(this,500);}};
+ @Override public IBinder onBind(Intent i){return null;}
+ @Override public int onStartCommand(Intent i,int flags,int id){
+  if(i==null||projection!=null)return START_NOT_STICKY;
+  NotificationManager nm=getSystemService(NotificationManager.class);
+  nm.createNotificationChannel(new NotificationChannel("ocr","Překlad titulků",NotificationManager.IMPORTANCE_LOW));
+  PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
+  startForeground(1,new Notification.Builder(this,"ocr").setSmallIcon(android.R.drawable.ic_menu_view).setContentTitle("OCR překlad aktivní").setContentIntent(open).build());
+  try{
+   region=i.getIntExtra("region",0);
+   wm=getSystemService(WindowManager.class);
+   overlay=new TextView(this); overlay.setTextSize(24);overlay.setTextColor(Color.WHITE);overlay.setGravity(Gravity.CENTER);overlay.setPadding(20,8,20,8);overlay.setBackgroundColor(0xcc000000);
+   WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);
+   // Output is opposite the input region to avoid reading our own translation.
+   p.gravity=(region==2?Gravity.BOTTOM:Gravity.TOP)|Gravity.CENTER_HORIZONTAL;p.y=40;wm.addView(overlay,p);
+   show("Stahuji jazykový model…");
+   recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+   translator=Translation.getClient(new TranslatorOptions.Builder().setSourceLanguage(i.getStringExtra("language")).setTargetLanguage(TranslateLanguage.CZECH).build());
+   projection=getSystemService(MediaProjectionManager.class).getMediaProjection(i.getIntExtra("result",0),(Intent)i.getParcelableExtra("permission"));
+   projection.registerCallback(new MediaProjection.Callback(){@Override public void onStop(){stopSelf();}},main);
+   translator.downloadModelIfNeeded().addOnSuccessListener(v->{if(!closed){show("");try{begin();main.post(expiry);}catch(Exception e){fail("Snímání nelze spustit");}}}).addOnFailureListener(e->fail("Jazykový model není dostupný"));
+  }catch(Exception e){fail("Překlad nelze spustit");}
+  return START_NOT_STICKY;
+ }
+ private void begin(){
+  android.util.DisplayMetrics m=new android.util.DisplayMetrics();wm.getDefaultDisplay().getRealMetrics(m);
+  int w=m.widthPixels,h=m.heightPixels;
+  reader=ImageReader.newInstance(w,h,PixelFormat.RGBA_8888,2);
+  reader.setOnImageAvailableListener(r->frame(r,w,h),main);
+  display=projection.createVirtualDisplay("MovieOCR",w,h,m.densityDpi,DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader.getSurface(),null,main);
+ }
+ private void frame(ImageReader r,int w,int h){
+  Bitmap crop=null;
+  try(Image image=r.acquireLatestImage()){
+   if(image==null||closed||busy||SystemClock.elapsedRealtime()-lastFrame<700)return;
+   lastFrame=SystemClock.elapsedRealtime();
+   Image.Plane p=image.getPlanes()[0];int padded=p.getRowStride()/p.getPixelStride();
+   Bitmap full=Bitmap.createBitmap(padded,h,Bitmap.Config.ARGB_8888);
+   try{full.copyPixelsFromBuffer(p.getBuffer());int height=h*(region==1?40:25)/100;crop=Bitmap.createBitmap(full,0,region==2?0:h-height,w,height);}finally{full.recycle();}
+  }catch(Exception e){return;}
+  final Bitmap input=crop;busy=true;
+  recognizer.process(InputImage.fromBitmap(input,0)).addOnCompleteListener(task->{
+   input.recycle();if(closed)return;
+   if(!task.isSuccessful()){busy=false;return;}
+   String source=task.getResult().getText().trim().replaceAll("\\s+"," ");
+   if(source.isEmpty()){busy=false;return;}
+   lastText=SystemClock.elapsedRealtime();
+   if(source.equals(previous)){busy=false;return;}
+   translator.translate(source).addOnCompleteListener(t->{busy=false;if(!closed&&t.isSuccessful()){previous=source;show(t.getResult());}});
+  });
+ }
+ private void show(String text){if(overlay!=null){overlay.setText(text);overlay.setVisibility(text.isEmpty()?View.GONE:View.VISIBLE);}}
+ private void fail(String text){if(!closed){Toast.makeText(this,text,Toast.LENGTH_LONG).show();stopSelf();}}
+ @Override public void onDestroy(){
+  closed=true;main.removeCallbacksAndMessages(null);
+  if(display!=null)display.release();if(reader!=null)reader.close();
+  if(projection!=null)projection.stop();if(recognizer!=null)recognizer.close();if(translator!=null)translator.close();
+  if(overlay!=null&&wm!=null)wm.removeView(overlay);
+  super.onDestroy();
+ }
+}

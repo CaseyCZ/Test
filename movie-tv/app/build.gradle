@@ -1,0 +1,10 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'cz.caseycz.movietv'
+ compileSdk 34
+ defaultConfig { applicationId 'cz.caseycz.movietv'; minSdk 29; targetSdk 34; versionCode 1; versionName '0.1-ocr' }
+}
+dependencies {
+ implementation 'com.google.mlkit:text-recognition:16.0.1'
+ implementation 'com.google.mlkit:translate:17.0.3'
+}
