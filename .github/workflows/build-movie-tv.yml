@@ -1,4 +1,4 @@
-name: Movie TV OCR debug
+name: Movie TV ARM debug
 on:
   push:
     branches: [feature/tv-movie-translation]
@@ -24,8 +24,23 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" 'platforms;android-34' 'build-tools;34.0.0'
       - run: gradle -p movie-tv :app:assembleDebug :app:testDebugUnitTest --no-daemon
+      - name: Verify and name ARM APKs
+        run: |
+          mkdir -p dist
+          for ABI in arm64-v8a armeabi-v7a; do
+            APK="movie-tv/app/build/outputs/apk/debug/app-$ABI-debug.apk"
+            test -s "$APK"
+            python -c 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); abis={p.split("/")[1] for p in z.namelist() if p.startswith("lib/") and p.endswith(".so")}; assert abis=={sys.argv[2]}, abis' "$APK" "$ABI"
+            cp "$APK" "dist/Movie-TV-0.4-test-$ABI.apk"
+          done
+          ls -lh dist
       - uses: actions/upload-artifact@v4
         with:
-          name: Movie-TV-OCR-debug
-          path: movie-tv/app/build/outputs/apk/debug/*.apk
+          name: Movie-TV-ARM64
+          path: dist/Movie-TV-0.4-test-arm64-v8a.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Movie-TV-ARM32
+          path: dist/Movie-TV-0.4-test-armeabi-v7a.apk
           if-no-files-found: error
